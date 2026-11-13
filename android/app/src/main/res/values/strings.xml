@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Chatbot UNAB</string>
+    <string name="login_title">Asistente Académico UNAB</string>
+    <string name="login_subtitle">Ingresa con tus credenciales institucionales</string>
+    <string name="student_id_hint">Código de estudiante (ej. U00000001)</string>
+    <string name="password_hint">Contraseña</string>
+    <string name="login_button">Iniciar sesión</string>
+    <string name="retry">Reintentar</string>
+    <string name="chat_hint">Escribe tu pregunta…</string>
+    <string name="send">Enviar</string>
+    <string name="typing">El asistente está escribiendo…</string>
+    <string name="nav_chat">Chat</string>
+    <string name="nav_ruta">Ruta académica</string>
+    <string name="nav_calendario">Calendario</string>
+    <string name="logout">Cerrar sesión</string>
+    <string name="logout_confirm">¿Deseas cerrar tu sesión en este dispositivo?</string>
+    <string name="calendar_empty">No hay eventos en el calendario académico.</string>
+    <string name="notification_channel_id">academic_events</string>
+    <string name="notification_channel_name">Fechas académicas</string>
+    <string name="notification_channel_description">Recordatorios de eventos del calendario académico UNAB</string>
+    <string name="notification_title">Recordatorio académico UNAB</string>
+</resources>

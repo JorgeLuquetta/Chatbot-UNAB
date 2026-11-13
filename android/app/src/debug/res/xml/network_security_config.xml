@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Debug: permite HTTP para probar contra n8n sin TLS (emulador o IP de EC2).
+     En producción publica n8n detrás de HTTPS (Caddy/Nginx + certificado). -->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="true" />
+</network-security-config>

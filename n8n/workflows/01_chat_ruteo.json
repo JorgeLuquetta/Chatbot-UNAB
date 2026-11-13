@@ -1,0 +1,1118 @@
+{
+  "id": "unabChatRouting1",
+  "name": "UNAB Chatbot - Chat (Ruteo por Intención)",
+  "nodes": [
+    {
+      "id": "0b6a9c7d-9a6b-5185-9439-e74763b631ba",
+      "name": "Webhook chat",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        300
+      ],
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "chat",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "webhookId": "10facd15-1dea-58cd-a645-ea0c91a991f6"
+    },
+    {
+      "id": "61cad480-c590-5b44-b49c-cf2314776a9a",
+      "name": "Preparar petición",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        220,
+        300
+      ],
+      "parameters": {
+        "jsCode": "// Funciones puras usadas dentro de los nodos Code de n8n.\n// build_workflows.py inserta este archivo (hasta la marca de export) en cada nodo Code,\n// y tests/test_n8n_code.py las prueba con Node.js.\n\nconst INTENT_LABELS = ['consulta-general', 'calendario', 'cursos-realizados', 'noticias'];\n\nconst FALLBACK_RESPONSE = 'Solo puedo ayudarte con temas académicos de la UNAB.';\n\nconst SYSTEM_BASE =\n  'Eres el asistente académico de la Universidad Autónoma de Bucaramanga (UNAB). ' +\n  'Responde SIEMPRE en español, de forma clara, breve y amable. ' +\n  'Solo atiendes temas académicos e institucionales de la UNAB. ' +\n  'Usa únicamente la información del contexto proporcionado; si no está, dilo con honestidad ' +\n  'y sugiere la dependencia de la UNAB a la que el estudiante puede acudir. No inventes datos.';\n\nconst CLASSIFIER_PROMPT =\n  'Clasifica el mensaje del estudiante en exactamente una de estas etiquetas:\\n' +\n  '- consulta-general: preguntas sobre normas, programas, plan de estudios, competencias, trámites o documentos institucionales.\\n' +\n  '- calendario: fechas académicas (matrículas, parciales, inicio/fin de clases, festivos, plazos).\\n' +\n  '- cursos-realizados: el progreso personal del estudiante (cursos aprobados, pendientes, en curso, notas, avance).\\n' +\n  '- noticias: noticias, eventos o novedades recientes de la universidad.\\n' +\n  'Responde solo con la etiqueta, sin explicación.';\n\nfunction stripAccents(s) {\n  return String(s).normalize('NFD').replace(/[̀-ͯ]/g, '');\n}\n\n// Property 5: siempre devuelve exactamente una etiqueta válida.\nfunction normalizeIntent(raw) {\n  const text = stripAccents(raw == null ? '' : raw).toLowerCase().trim();\n  const cleaned = text.replace(/[^a-z\\- ]/g, ' ').replace(/\\s+/g, ' ').trim();\n  const asLabel = cleaned.replace(/ /g, '-');\n  if (INTENT_LABELS.includes(asLabel)) return asLabel;\n  const found = INTENT_LABELS.filter((l) => cleaned.includes(l) || cleaned.includes(l.replace('-', ' ')));\n  if (found.length === 1) return found[0];\n  return 'consulta-general'; // Requirement 3.6: fallback\n}\n\nfunction bearerToken(headers) {\n  const h = headers || {};\n  const auth = String(h.authorization || h.Authorization || '').trim();\n  return /^bearer\\s+/i.test(auth) ? auth.replace(/^bearer\\s+/i, '').trim() : '';\n}\n\nfunction historyMessages(history) {\n  let h = history;\n  if (typeof h === 'string') {\n    try { h = JSON.parse(h); } catch (e) { h = []; }\n  }\n  if (!Array.isArray(h)) return [];\n  return h\n    .filter((m) => m && (m.role === 'user' || m.role === 'assistant') && typeof m.content === 'string')\n    .slice(-20) // Property 16: máximo 10 intercambios\n    .map((m) => ({ role: m.role, content: m.content }));\n}\n\nfunction buildMessages(systemExtra, history, message) {\n  return [\n    { role: 'system', content: SYSTEM_BASE + '\\n\\n' + systemExtra },\n    ...historyMessages(history),\n    { role: 'user', content: String(message || '') },\n  ];\n}\n\nfunction todayBogota(now) {\n  return (now || new Date()).toLocaleDateString('es-CO', {\n    timeZone: 'America/Bogota', weekday: 'long', year: 'numeric', month: 'long', day: 'numeric',\n  });\n}\n\nfunction ragContext(chunks) {\n  if (!Array.isArray(chunks) || chunks.length === 0) {\n    return 'CONTEXTO: (no se encontraron fragmentos relevantes en los documentos institucionales)';\n  }\n  return 'CONTEXTO (fragmentos de documentos oficiales CCD de la UNAB):\\n' +\n    chunks.map((c, i) => `[${i + 1}] (${c.document_name}) ${c.text}`).join('\\n\\n');\n}\n\n// Acepta encabezados en inglés o español en la hoja de Google Sheets.\nfunction normalizeEvent(row) {\n  const r = {};\n  for (const [k, v] of Object.entries(row || {})) r[stripAccents(k).toLowerCase().trim()] = v;\n  const name = r.event_name ?? r.evento ?? r.nombre ?? r.actividad ?? '';\n  const date = r.event_date ?? r.fecha ?? r.date ?? '';\n  const desc = r.description ?? r.descripcion ?? r.detalle ?? '';\n  return { event_name: String(name).trim(), event_date: String(date).trim(), description: String(desc).trim() };\n}\n\nfunction calendarEvents(rows) {\n  return (rows || [])\n    .filter((r) => r && typeof r === 'object' && !r.error)\n    .map(normalizeEvent)\n    .filter((e) => e.event_name && e.event_date)\n    .sort((a, b) => a.event_date.localeCompare(b.event_date));\n}\n\nfunction calendarContext(events, now) {\n  const list = events.length\n    ? events.map((e) => `- ${e.event_name}: ${e.event_date}${e.description ? ' — ' + e.description : ''}`).join('\\n')\n    : '(el calendario no tiene eventos registrados)';\n  return `Hoy es ${todayBogota(now)}.\\nCALENDARIO ACADÉMICO UNAB:\\n${list}`;\n}\n\nfunction coursesContext(record) {\n  const r = record || {};\n  const courses = Array.isArray(r.courses) ? r.courses : [];\n  const label = { completed: 'aprobado', in_progress: 'en curso', pending: 'pendiente' };\n  const lines = courses.map((c) =>\n    `- Semestre ${c.semester}: ${c.course_code} ${c.course_name} — ${label[c.status] || c.status}` +\n    (c.grade != null ? ` (nota ${c.grade})` : ''));\n  return 'HISTORIAL ACADÉMICO DEL ESTUDIANTE (solo de este estudiante):\\n' +\n    `Total cursos: ${r.total || 0}; aprobados: ${r.completed || 0}; en curso: ${r.in_progress || 0}; ` +\n    `pendientes: ${r.pending || 0}; avance: ${r.progress_percentage || 0}%.\\n` + (lines.join('\\n') || '(sin cursos registrados)') +\n    '\\nIncluye en tu respuesta el porcentaje de avance cuando sea pertinente.';\n}\n\nfunction newsContext(news) {\n  const items = Array.isArray(news) ? news : [];\n  return 'NOTICIAS RECIENTES DE LA UNAB (más recientes primero):\\n' +\n    items.map((n) => `- [${String(n.published_at).slice(0, 10)}] ${n.title}: ${n.summary} (${n.source_url})`).join('\\n') +\n    '\\nResume solo las noticias relacionadas con la pregunta; si ninguna aplica, menciona las más recientes.';\n}\n\nfunction parseEventDate(value) {\n  const s = String(value || '').trim();\n  if (/^\\d{4}-\\d{2}-\\d{2}$/.test(s)) return new Date(s + 'T00:00:00-05:00'); // medianoche Colombia\n  const iso = /[zZ]|[+-]\\d{2}:?\\d{2}$/.test(s) ? s : (s.includes('T') ? s + '-05:00' : s);\n  const d = new Date(iso);\n  return isNaN(d.getTime()) || !/^\\d{4}-\\d{2}-\\d{2}/.test(s) ? null : d;\n}\n\n// Property 24: eventos con fecha en (now, now + 48h].\nfunction eventsInWindow(events, now, hours) {\n  const t0 = (now || new Date()).getTime();\n  const t1 = t0 + (hours || 48) * 3600 * 1000;\n  return (events || [])\n    .map((e) => ({ e, d: parseEventDate(e.event_date) }))\n    .filter(({ d }) => d && d.getTime() > t0 && d.getTime() <= t1)\n    .map(({ e }) => ({ ...e, event_key: `${e.event_name}|${e.event_date}` }));\n}\n\nfunction llmText(resp) {\n  try {\n    const t = resp.choices[0].message.content;\n    return typeof t === 'string' ? t.trim() : '';\n  } catch (e) {\n    return '';\n  }\n}\n\n// ---- nodo ----\nconst req = $input.first().json;\nconst body = req.body || {};\nreturn [{ json: {\n  token: bearerToken(req.headers),\n  message: typeof body.message === 'string' ? body.message : '',\n  fcm_token: typeof body.fcm_token === 'string' ? body.fcm_token : '',\n} }];"
+      }
+    },
+    {
+      "id": "609732d5-3928-5887-9d49-d393dd899b59",
+      "name": "Validar sesión",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        440,
+        300
+      ],
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT v.session_id FROM (SELECT 1) AS uno LEFT JOIN LATERAL validate_session($1) v ON true",
+        "options": {
+          "queryReplacement": "={{ [ $json.token ] }}"
+        }
+      },
+      "credentials": {
+        "postgres": {
+          "id": "unabSupabasePg01",
+          "name": "Supabase Postgres"
+        }
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "id": "78265867-d6d3-54df-b3df-947a3aee9aed",
+      "name": "¿Sesión válida?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        660,
+        300
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
+          "conditions": [
+            {
+              "id": "ad65e719-c29e-52cf-8dda-0a1247e6468e",
+              "leftValue": "={{ $json.session_id }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "29c707dc-59f0-5db4-88aa-08f7588ec0e8",
+      "name": "Responder 401",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        880,
+        500
+      ],
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ error: 'Tu sesión expiró. Inicia sesión de nuevo.' }) }}",
+        "options": {
+          "responseCode": 401
+        }
+      }
+    },
+    {
+      "id": "a93eeaa0-9e29-564a-9ffb-368da1a6c05c",
+      "name": "Responder 503 (BD)",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        660,
+        700
+      ],
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ error: 'El servicio no está disponible en este momento. Intenta de nuevo en unos minutos.' }) }}",
+        "options": {
+          "responseCode": 503
+        }
+      }
+    },
+    {
+      "id": "bf23f8cf-5f00-55d7-ae08-1bda7925bb31",
+      "name": "Cargar historial",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        880,
+        300
+      ],
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT get_recent_history($1, 10) AS history",
+        "options": {
+          "queryReplacement": "={{ [ $('Validar sesión').first().json.session_id ] }}"
+        }
+      },
+      "credentials": {
+        "postgres": {
+          "id": "unabSupabasePg01",
+          "name": "Supabase Postgres"
+        }
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "id": "06158c9f-8e2b-555b-9224-e3ff1730384d",
+      "name": "Guardrails entrada",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1100,
+        300
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "http://guardrails:8080/validate-input",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ session_id: $('Validar sesión').first().json.session_id, message: $('Preparar petición').first().json.message }) }}",
+        "options": {
+          "timeout": 3000
+        }
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "id": "d2850813-4af2-5d9b-b530-6276fd7d1186",
+      "name": "¿Entrada permitida?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        1320,
+        300
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
+          "conditions": [
+            {
+              "id": "7bdebe35-fa9c-5f52-b70c-89c1a99bff3d",
+              "leftValue": "={{ $json.allowed }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "736971c2-84db-5d5b-92b4-4f2122d2d088",
+      "name": "Responder mensaje rechazado",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        1540,
+        500
+      ],
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ error: 'No pude procesar tu mensaje. Reformula tu pregunta sobre temas académicos de la UNAB.' }) }}",
+        "options": {
+          "responseCode": 400
+        }
+      }
+    },
+    {
+      "id": "d8594856-4fb0-5b6a-ad53-d9d03b0fa408",
+      "name": "Clasificar intención",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1540,
+        300
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.LLM_API_URL || 'https://api.openai.com/v1/chat/completions' }}",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ model: $env.LLM_MODEL || 'gpt-4o-mini', messages: [{ role: 'system', content: \"Clasifica el mensaje del estudiante en exactamente una de estas etiquetas: consulta-general (normas, programas, plan de estudios, competencias, trámites, documentos institucionales), calendario (fechas académicas: matrículas, parciales, inicio o fin de clases, plazos), cursos-realizados (progreso personal del estudiante: cursos aprobados, pendientes, en curso, notas, avance), noticias (noticias, eventos o novedades recientes de la universidad). Responde solo con la etiqueta.\" }, { role: 'user', content: $('Preparar petición').first().json.message }], temperature: 0, max_tokens: 10 }) }}",
+        "options": {
+          "timeout": 4000
+        },
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "openAiApi"
+      },
+      "onError": "continueErrorOutput",
+      "credentials": {
+        "openAiApi": {
+          "id": "unabOpenAiApi001",
+          "name": "OpenAI API"
+        }
+      }
+    },
+    {
+      "id": "7de795dd-f399-59d8-afc3-ecb8ac878b6b",
+      "name": "Normalizar intención",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1760,
+        300
+      ],
+      "parameters": {
+        "jsCode": "// Funciones puras usadas dentro de los nodos Code de n8n.\n// build_workflows.py inserta este archivo (hasta la marca de export) en cada nodo Code,\n// y tests/test_n8n_code.py las prueba con Node.js.\n\nconst INTENT_LABELS = ['consulta-general', 'calendario', 'cursos-realizados', 'noticias'];\n\nconst FALLBACK_RESPONSE = 'Solo puedo ayudarte con temas académicos de la UNAB.';\n\nconst SYSTEM_BASE =\n  'Eres el asistente académico de la Universidad Autónoma de Bucaramanga (UNAB). ' +\n  'Responde SIEMPRE en español, de forma clara, breve y amable. ' +\n  'Solo atiendes temas académicos e institucionales de la UNAB. ' +\n  'Usa únicamente la información del contexto proporcionado; si no está, dilo con honestidad ' +\n  'y sugiere la dependencia de la UNAB a la que el estudiante puede acudir. No inventes datos.';\n\nconst CLASSIFIER_PROMPT =\n  'Clasifica el mensaje del estudiante en exactamente una de estas etiquetas:\\n' +\n  '- consulta-general: preguntas sobre normas, programas, plan de estudios, competencias, trámites o documentos institucionales.\\n' +\n  '- calendario: fechas académicas (matrículas, parciales, inicio/fin de clases, festivos, plazos).\\n' +\n  '- cursos-realizados: el progreso personal del estudiante (cursos aprobados, pendientes, en curso, notas, avance).\\n' +\n  '- noticias: noticias, eventos o novedades recientes de la universidad.\\n' +\n  'Responde solo con la etiqueta, sin explicación.';\n\nfunction stripAccents(s) {\n  return String(s).normalize('NFD').replace(/[̀-ͯ]/g, '');\n}\n\n// Property 5: siempre devuelve exactamente una etiqueta válida.\nfunction normalizeIntent(raw) {\n  const text = stripAccents(raw == null ? '' : raw).toLowerCase().trim();\n  const cleaned = text.replace(/[^a-z\\- ]/g, ' ').replace(/\\s+/g, ' ').trim();\n  const asLabel = cleaned.replace(/ /g, '-');\n  if (INTENT_LABELS.includes(asLabel)) return asLabel;\n  const found = INTENT_LABELS.filter((l) => cleaned.includes(l) || cleaned.includes(l.replace('-', ' ')));\n  if (found.length === 1) return found[0];\n  return 'consulta-general'; // Requirement 3.6: fallback\n}\n\nfunction bearerToken(headers) {\n  const h = headers || {};\n  const auth = String(h.authorization || h.Authorization || '').trim();\n  return /^bearer\\s+/i.test(auth) ? auth.replace(/^bearer\\s+/i, '').trim() : '';\n}\n\nfunction historyMessages(history) {\n  let h = history;\n  if (typeof h === 'string') {\n    try { h = JSON.parse(h); } catch (e) { h = []; }\n  }\n  if (!Array.isArray(h)) return [];\n  return h\n    .filter((m) => m && (m.role === 'user' || m.role === 'assistant') && typeof m.content === 'string')\n    .slice(-20) // Property 16: máximo 10 intercambios\n    .map((m) => ({ role: m.role, content: m.content }));\n}\n\nfunction buildMessages(systemExtra, history, message) {\n  return [\n    { role: 'system', content: SYSTEM_BASE + '\\n\\n' + systemExtra },\n    ...historyMessages(history),\n    { role: 'user', content: String(message || '') },\n  ];\n}\n\nfunction todayBogota(now) {\n  return (now || new Date()).toLocaleDateString('es-CO', {\n    timeZone: 'America/Bogota', weekday: 'long', year: 'numeric', month: 'long', day: 'numeric',\n  });\n}\n\nfunction ragContext(chunks) {\n  if (!Array.isArray(chunks) || chunks.length === 0) {\n    return 'CONTEXTO: (no se encontraron fragmentos relevantes en los documentos institucionales)';\n  }\n  return 'CONTEXTO (fragmentos de documentos oficiales CCD de la UNAB):\\n' +\n    chunks.map((c, i) => `[${i + 1}] (${c.document_name}) ${c.text}`).join('\\n\\n');\n}\n\n// Acepta encabezados en inglés o español en la hoja de Google Sheets.\nfunction normalizeEvent(row) {\n  const r = {};\n  for (const [k, v] of Object.entries(row || {})) r[stripAccents(k).toLowerCase().trim()] = v;\n  const name = r.event_name ?? r.evento ?? r.nombre ?? r.actividad ?? '';\n  const date = r.event_date ?? r.fecha ?? r.date ?? '';\n  const desc = r.description ?? r.descripcion ?? r.detalle ?? '';\n  return { event_name: String(name).trim(), event_date: String(date).trim(), description: String(desc).trim() };\n}\n\nfunction calendarEvents(rows) {\n  return (rows || [])\n    .filter((r) => r && typeof r === 'object' && !r.error)\n    .map(normalizeEvent)\n    .filter((e) => e.event_name && e.event_date)\n    .sort((a, b) => a.event_date.localeCompare(b.event_date));\n}\n\nfunction calendarContext(events, now) {\n  const list = events.length\n    ? events.map((e) => `- ${e.event_name}: ${e.event_date}${e.description ? ' — ' + e.description : ''}`).join('\\n')\n    : '(el calendario no tiene eventos registrados)';\n  return `Hoy es ${todayBogota(now)}.\\nCALENDARIO ACADÉMICO UNAB:\\n${list}`;\n}\n\nfunction coursesContext(record) {\n  const r = record || {};\n  const courses = Array.isArray(r.courses) ? r.courses : [];\n  const label = { completed: 'aprobado', in_progress: 'en curso', pending: 'pendiente' };\n  const lines = courses.map((c) =>\n    `- Semestre ${c.semester}: ${c.course_code} ${c.course_name} — ${label[c.status] || c.status}` +\n    (c.grade != null ? ` (nota ${c.grade})` : ''));\n  return 'HISTORIAL ACADÉMICO DEL ESTUDIANTE (solo de este estudiante):\\n' +\n    `Total cursos: ${r.total || 0}; aprobados: ${r.completed || 0}; en curso: ${r.in_progress || 0}; ` +\n    `pendientes: ${r.pending || 0}; avance: ${r.progress_percentage || 0}%.\\n` + (lines.join('\\n') || '(sin cursos registrados)') +\n    '\\nIncluye en tu respuesta el porcentaje de avance cuando sea pertinente.';\n}\n\nfunction newsContext(news) {\n  const items = Array.isArray(news) ? news : [];\n  return 'NOTICIAS RECIENTES DE LA UNAB (más recientes primero):\\n' +\n    items.map((n) => `- [${String(n.published_at).slice(0, 10)}] ${n.title}: ${n.summary} (${n.source_url})`).join('\\n') +\n    '\\nResume solo las noticias relacionadas con la pregunta; si ninguna aplica, menciona las más recientes.';\n}\n\nfunction parseEventDate(value) {\n  const s = String(value || '').trim();\n  if (/^\\d{4}-\\d{2}-\\d{2}$/.test(s)) return new Date(s + 'T00:00:00-05:00'); // medianoche Colombia\n  const iso = /[zZ]|[+-]\\d{2}:?\\d{2}$/.test(s) ? s : (s.includes('T') ? s + '-05:00' : s);\n  const d = new Date(iso);\n  return isNaN(d.getTime()) || !/^\\d{4}-\\d{2}-\\d{2}/.test(s) ? null : d;\n}\n\n// Property 24: eventos con fecha en (now, now + 48h].\nfunction eventsInWindow(events, now, hours) {\n  const t0 = (now || new Date()).getTime();\n  const t1 = t0 + (hours || 48) * 3600 * 1000;\n  return (events || [])\n    .map((e) => ({ e, d: parseEventDate(e.event_date) }))\n    .filter(({ d }) => d && d.getTime() > t0 && d.getTime() <= t1)\n    .map(({ e }) => ({ ...e, event_key: `${e.event_name}|${e.event_date}` }));\n}\n\nfunction llmText(resp) {\n  try {\n    const t = resp.choices[0].message.content;\n    return typeof t === 'string' ? t.trim() : '';\n  } catch (e) {\n    return '';\n  }\n}\n\n// ---- nodo ----\nconst intent = normalizeIntent(llmText($input.first().json));\nreturn [{ json: {\n  intent,\n  route: INTENT_LABELS.indexOf(intent),\n  session_id: $('Validar sesión').first().json.session_id,\n  message: $('Preparar petición').first().json.message,\n  history: $('Cargar historial').first().json.history,\n} }];"
+      }
+    },
+    {
+      "id": "4938c131-47ca-5d84-b6a0-f2138ffbd59f",
+      "name": "Enrutar por intención",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3,
+      "position": [
+        1980,
+        300
+      ],
+      "parameters": {
+        "mode": "expression",
+        "numberOutputs": 4,
+        "output": "={{ $json.route }}"
+      }
+    },
+    {
+      "id": "ec133e05-3dd7-5452-a73f-9ef5c9d8f993",
+      "name": "Buscar documentos (MCP)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2200,
+        0
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "http://mcp-server:8000/tools/search_documents",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ query: $('Normalizar intención').first().json.message, top_k: 5 }) }}",
+        "options": {
+          "timeout": 4000
+        }
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "id": "1b5c00a3-ff45-5d23-8a8b-0d0a94c379ec",
+      "name": "Prompt consulta general",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2420,
+        0
+      ],
+      "parameters": {
+        "jsCode": "// Funciones puras usadas dentro de los nodos Code de n8n.\n// build_workflows.py inserta este archivo (hasta la marca de export) en cada nodo Code,\n// y tests/test_n8n_code.py las prueba con Node.js.\n\nconst INTENT_LABELS = ['consulta-general', 'calendario', 'cursos-realizados', 'noticias'];\n\nconst FALLBACK_RESPONSE = 'Solo puedo ayudarte con temas académicos de la UNAB.';\n\nconst SYSTEM_BASE =\n  'Eres el asistente académico de la Universidad Autónoma de Bucaramanga (UNAB). ' +\n  'Responde SIEMPRE en español, de forma clara, breve y amable. ' +\n  'Solo atiendes temas académicos e institucionales de la UNAB. ' +\n  'Usa únicamente la información del contexto proporcionado; si no está, dilo con honestidad ' +\n  'y sugiere la dependencia de la UNAB a la que el estudiante puede acudir. No inventes datos.';\n\nconst CLASSIFIER_PROMPT =\n  'Clasifica el mensaje del estudiante en exactamente una de estas etiquetas:\\n' +\n  '- consulta-general: preguntas sobre normas, programas, plan de estudios, competencias, trámites o documentos institucionales.\\n' +\n  '- calendario: fechas académicas (matrículas, parciales, inicio/fin de clases, festivos, plazos).\\n' +\n  '- cursos-realizados: el progreso personal del estudiante (cursos aprobados, pendientes, en curso, notas, avance).\\n' +\n  '- noticias: noticias, eventos o novedades recientes de la universidad.\\n' +\n  'Responde solo con la etiqueta, sin explicación.';\n\nfunction stripAccents(s) {\n  return String(s).normalize('NFD').replace(/[̀-ͯ]/g, '');\n}\n\n// Property 5: siempre devuelve exactamente una etiqueta válida.\nfunction normalizeIntent(raw) {\n  const text = stripAccents(raw == null ? '' : raw).toLowerCase().trim();\n  const cleaned = text.replace(/[^a-z\\- ]/g, ' ').replace(/\\s+/g, ' ').trim();\n  const asLabel = cleaned.replace(/ /g, '-');\n  if (INTENT_LABELS.includes(asLabel)) return asLabel;\n  const found = INTENT_LABELS.filter((l) => cleaned.includes(l) || cleaned.includes(l.replace('-', ' ')));\n  if (found.length === 1) return found[0];\n  return 'consulta-general'; // Requirement 3.6: fallback\n}\n\nfunction bearerToken(headers) {\n  const h = headers || {};\n  const auth = String(h.authorization || h.Authorization || '').trim();\n  return /^bearer\\s+/i.test(auth) ? auth.replace(/^bearer\\s+/i, '').trim() : '';\n}\n\nfunction historyMessages(history) {\n  let h = history;\n  if (typeof h === 'string') {\n    try { h = JSON.parse(h); } catch (e) { h = []; }\n  }\n  if (!Array.isArray(h)) return [];\n  return h\n    .filter((m) => m && (m.role === 'user' || m.role === 'assistant') && typeof m.content === 'string')\n    .slice(-20) // Property 16: máximo 10 intercambios\n    .map((m) => ({ role: m.role, content: m.content }));\n}\n\nfunction buildMessages(systemExtra, history, message) {\n  return [\n    { role: 'system', content: SYSTEM_BASE + '\\n\\n' + systemExtra },\n    ...historyMessages(history),\n    { role: 'user', content: String(message || '') },\n  ];\n}\n\nfunction todayBogota(now) {\n  return (now || new Date()).toLocaleDateString('es-CO', {\n    timeZone: 'America/Bogota', weekday: 'long', year: 'numeric', month: 'long', day: 'numeric',\n  });\n}\n\nfunction ragContext(chunks) {\n  if (!Array.isArray(chunks) || chunks.length === 0) {\n    return 'CONTEXTO: (no se encontraron fragmentos relevantes en los documentos institucionales)';\n  }\n  return 'CONTEXTO (fragmentos de documentos oficiales CCD de la UNAB):\\n' +\n    chunks.map((c, i) => `[${i + 1}] (${c.document_name}) ${c.text}`).join('\\n\\n');\n}\n\n// Acepta encabezados en inglés o español en la hoja de Google Sheets.\nfunction normalizeEvent(row) {\n  const r = {};\n  for (const [k, v] of Object.entries(row || {})) r[stripAccents(k).toLowerCase().trim()] = v;\n  const name = r.event_name ?? r.evento ?? r.nombre ?? r.actividad ?? '';\n  const date = r.event_date ?? r.fecha ?? r.date ?? '';\n  const desc = r.description ?? r.descripcion ?? r.detalle ?? '';\n  return { event_name: String(name).trim(), event_date: String(date).trim(), description: String(desc).trim() };\n}\n\nfunction calendarEvents(rows) {\n  return (rows || [])\n    .filter((r) => r && typeof r === 'object' && !r.error)\n    .map(normalizeEvent)\n    .filter((e) => e.event_name && e.event_date)\n    .sort((a, b) => a.event_date.localeCompare(b.event_date));\n}\n\nfunction calendarContext(events, now) {\n  const list = events.length\n    ? events.map((e) => `- ${e.event_name}: ${e.event_date}${e.description ? ' — ' + e.description : ''}`).join('\\n')\n    : '(el calendario no tiene eventos registrados)';\n  return `Hoy es ${todayBogota(now)}.\\nCALENDARIO ACADÉMICO UNAB:\\n${list}`;\n}\n\nfunction coursesContext(record) {\n  const r = record || {};\n  const courses = Array.isArray(r.courses) ? r.courses : [];\n  const label = { completed: 'aprobado', in_progress: 'en curso', pending: 'pendiente' };\n  const lines = courses.map((c) =>\n    `- Semestre ${c.semester}: ${c.course_code} ${c.course_name} — ${label[c.status] || c.status}` +\n    (c.grade != null ? ` (nota ${c.grade})` : ''));\n  return 'HISTORIAL ACADÉMICO DEL ESTUDIANTE (solo de este estudiante):\\n' +\n    `Total cursos: ${r.total || 0}; aprobados: ${r.completed || 0}; en curso: ${r.in_progress || 0}; ` +\n    `pendientes: ${r.pending || 0}; avance: ${r.progress_percentage || 0}%.\\n` + (lines.join('\\n') || '(sin cursos registrados)') +\n    '\\nIncluye en tu respuesta el porcentaje de avance cuando sea pertinente.';\n}\n\nfunction newsContext(news) {\n  const items = Array.isArray(news) ? news : [];\n  return 'NOTICIAS RECIENTES DE LA UNAB (más recientes primero):\\n' +\n    items.map((n) => `- [${String(n.published_at).slice(0, 10)}] ${n.title}: ${n.summary} (${n.source_url})`).join('\\n') +\n    '\\nResume solo las noticias relacionadas con la pregunta; si ninguna aplica, menciona las más recientes.';\n}\n\nfunction parseEventDate(value) {\n  const s = String(value || '').trim();\n  if (/^\\d{4}-\\d{2}-\\d{2}$/.test(s)) return new Date(s + 'T00:00:00-05:00'); // medianoche Colombia\n  const iso = /[zZ]|[+-]\\d{2}:?\\d{2}$/.test(s) ? s : (s.includes('T') ? s + '-05:00' : s);\n  const d = new Date(iso);\n  return isNaN(d.getTime()) || !/^\\d{4}-\\d{2}-\\d{2}/.test(s) ? null : d;\n}\n\n// Property 24: eventos con fecha en (now, now + 48h].\nfunction eventsInWindow(events, now, hours) {\n  const t0 = (now || new Date()).getTime();\n  const t1 = t0 + (hours || 48) * 3600 * 1000;\n  return (events || [])\n    .map((e) => ({ e, d: parseEventDate(e.event_date) }))\n    .filter(({ d }) => d && d.getTime() > t0 && d.getTime() <= t1)\n    .map(({ e }) => ({ ...e, event_key: `${e.event_name}|${e.event_date}` }));\n}\n\nfunction llmText(resp) {\n  try {\n    const t = resp.choices[0].message.content;\n    return typeof t === 'string' ? t.trim() : '';\n  } catch (e) {\n    return '';\n  }\n}\n\n// ---- nodo ----\nconst ctx = $('Normalizar intención').first().json;\nconst chunks = $input.first().json.chunks || [];\nreturn [{ json: { messages: buildMessages(ragContext(chunks), ctx.history, ctx.message) } }];"
+      }
+    },
+    {
+      "id": "48b75740-bf41-5b76-9992-48df31c9602b",
+      "name": "Responder RAG no disponible",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        2640,
+        -150
+      ],
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ response: \"En este momento no puedo consultar los documentos institucionales. Intenta de nuevo en unos minutos.\", intent: $('Normalizar intención').first().json.intent }) }}",
+        "options": {
+          "responseCode": 200
+        }
+      }
+    },
+    {
+      "id": "96cd1e0c-c2d2-562b-86c8-20b26034affa",
+      "name": "Leer calendario (Sheets)",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        2200,
+        200
+      ],
+      "parameters": {
+        "authentication": "serviceAccount",
+        "operation": "read",
+        "documentId": {
+          "__rl": true,
+          "value": "={{ $env.GOOGLE_SHEET_ID }}",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "={{ $env.GOOGLE_SHEET_NAME || 'Calendario Académico' }}",
+          "mode": "name"
+        },
+        "options": {}
+      },
+      "credentials": {
+        "googleApi": {
+          "id": "unabGoogleSa0001",
+          "name": "Google Service Account"
+        }
+      },
+      "alwaysOutputData": true,
+      "onError": "continueRegularOutput"
+    },
+    {
+      "id": "c22f82b9-0f38-54d6-ab53-0df63592668c",
+      "name": "¿Calendario disponible?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        2310,
+        200
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
+          "conditions": [
+            {
+              "id": "581e965d-1483-51cc-9d1b-bec9afefe63f",
+              "leftValue": "={{ $json.error }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "empty",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "a5401b86-02a3-52f9-8b0e-526c64f021c4",
+      "name": "Prompt calendario",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2420,
+        200
+      ],
+      "parameters": {
+        "jsCode": "// Funciones puras usadas dentro de los nodos Code de n8n.\n// build_workflows.py inserta este archivo (hasta la marca de export) en cada nodo Code,\n// y tests/test_n8n_code.py las prueba con Node.js.\n\nconst INTENT_LABELS = ['consulta-general', 'calendario', 'cursos-realizados', 'noticias'];\n\nconst FALLBACK_RESPONSE = 'Solo puedo ayudarte con temas académicos de la UNAB.';\n\nconst SYSTEM_BASE =\n  'Eres el asistente académico de la Universidad Autónoma de Bucaramanga (UNAB). ' +\n  'Responde SIEMPRE en español, de forma clara, breve y amable. ' +\n  'Solo atiendes temas académicos e institucionales de la UNAB. ' +\n  'Usa únicamente la información del contexto proporcionado; si no está, dilo con honestidad ' +\n  'y sugiere la dependencia de la UNAB a la que el estudiante puede acudir. No inventes datos.';\n\nconst CLASSIFIER_PROMPT =\n  'Clasifica el mensaje del estudiante en exactamente una de estas etiquetas:\\n' +\n  '- consulta-general: preguntas sobre normas, programas, plan de estudios, competencias, trámites o documentos institucionales.\\n' +\n  '- calendario: fechas académicas (matrículas, parciales, inicio/fin de clases, festivos, plazos).\\n' +\n  '- cursos-realizados: el progreso personal del estudiante (cursos aprobados, pendientes, en curso, notas, avance).\\n' +\n  '- noticias: noticias, eventos o novedades recientes de la universidad.\\n' +\n  'Responde solo con la etiqueta, sin explicación.';\n\nfunction stripAccents(s) {\n  return String(s).normalize('NFD').replace(/[̀-ͯ]/g, '');\n}\n\n// Property 5: siempre devuelve exactamente una etiqueta válida.\nfunction normalizeIntent(raw) {\n  const text = stripAccents(raw == null ? '' : raw).toLowerCase().trim();\n  const cleaned = text.replace(/[^a-z\\- ]/g, ' ').replace(/\\s+/g, ' ').trim();\n  const asLabel = cleaned.replace(/ /g, '-');\n  if (INTENT_LABELS.includes(asLabel)) return asLabel;\n  const found = INTENT_LABELS.filter((l) => cleaned.includes(l) || cleaned.includes(l.replace('-', ' ')));\n  if (found.length === 1) return found[0];\n  return 'consulta-general'; // Requirement 3.6: fallback\n}\n\nfunction bearerToken(headers) {\n  const h = headers || {};\n  const auth = String(h.authorization || h.Authorization || '').trim();\n  return /^bearer\\s+/i.test(auth) ? auth.replace(/^bearer\\s+/i, '').trim() : '';\n}\n\nfunction historyMessages(history) {\n  let h = history;\n  if (typeof h === 'string') {\n    try { h = JSON.parse(h); } catch (e) { h = []; }\n  }\n  if (!Array.isArray(h)) return [];\n  return h\n    .filter((m) => m && (m.role === 'user' || m.role === 'assistant') && typeof m.content === 'string')\n    .slice(-20) // Property 16: máximo 10 intercambios\n    .map((m) => ({ role: m.role, content: m.content }));\n}\n\nfunction buildMessages(systemExtra, history, message) {\n  return [\n    { role: 'system', content: SYSTEM_BASE + '\\n\\n' + systemExtra },\n    ...historyMessages(history),\n    { role: 'user', content: String(message || '') },\n  ];\n}\n\nfunction todayBogota(now) {\n  return (now || new Date()).toLocaleDateString('es-CO', {\n    timeZone: 'America/Bogota', weekday: 'long', year: 'numeric', month: 'long', day: 'numeric',\n  });\n}\n\nfunction ragContext(chunks) {\n  if (!Array.isArray(chunks) || chunks.length === 0) {\n    return 'CONTEXTO: (no se encontraron fragmentos relevantes en los documentos institucionales)';\n  }\n  return 'CONTEXTO (fragmentos de documentos oficiales CCD de la UNAB):\\n' +\n    chunks.map((c, i) => `[${i + 1}] (${c.document_name}) ${c.text}`).join('\\n\\n');\n}\n\n// Acepta encabezados en inglés o español en la hoja de Google Sheets.\nfunction normalizeEvent(row) {\n  const r = {};\n  for (const [k, v] of Object.entries(row || {})) r[stripAccents(k).toLowerCase().trim()] = v;\n  const name = r.event_name ?? r.evento ?? r.nombre ?? r.actividad ?? '';\n  const date = r.event_date ?? r.fecha ?? r.date ?? '';\n  const desc = r.description ?? r.descripcion ?? r.detalle ?? '';\n  return { event_name: String(name).trim(), event_date: String(date).trim(), description: String(desc).trim() };\n}\n\nfunction calendarEvents(rows) {\n  return (rows || [])\n    .filter((r) => r && typeof r === 'object' && !r.error)\n    .map(normalizeEvent)\n    .filter((e) => e.event_name && e.event_date)\n    .sort((a, b) => a.event_date.localeCompare(b.event_date));\n}\n\nfunction calendarContext(events, now) {\n  const list = events.length\n    ? events.map((e) => `- ${e.event_name}: ${e.event_date}${e.description ? ' — ' + e.description : ''}`).join('\\n')\n    : '(el calendario no tiene eventos registrados)';\n  return `Hoy es ${todayBogota(now)}.\\nCALENDARIO ACADÉMICO UNAB:\\n${list}`;\n}\n\nfunction coursesContext(record) {\n  const r = record || {};\n  const courses = Array.isArray(r.courses) ? r.courses : [];\n  const label = { completed: 'aprobado', in_progress: 'en curso', pending: 'pendiente' };\n  const lines = courses.map((c) =>\n    `- Semestre ${c.semester}: ${c.course_code} ${c.course_name} — ${label[c.status] || c.status}` +\n    (c.grade != null ? ` (nota ${c.grade})` : ''));\n  return 'HISTORIAL ACADÉMICO DEL ESTUDIANTE (solo de este estudiante):\\n' +\n    `Total cursos: ${r.total || 0}; aprobados: ${r.completed || 0}; en curso: ${r.in_progress || 0}; ` +\n    `pendientes: ${r.pending || 0}; avance: ${r.progress_percentage || 0}%.\\n` + (lines.join('\\n') || '(sin cursos registrados)') +\n    '\\nIncluye en tu respuesta el porcentaje de avance cuando sea pertinente.';\n}\n\nfunction newsContext(news) {\n  const items = Array.isArray(news) ? news : [];\n  return 'NOTICIAS RECIENTES DE LA UNAB (más recientes primero):\\n' +\n    items.map((n) => `- [${String(n.published_at).slice(0, 10)}] ${n.title}: ${n.summary} (${n.source_url})`).join('\\n') +\n    '\\nResume solo las noticias relacionadas con la pregunta; si ninguna aplica, menciona las más recientes.';\n}\n\nfunction parseEventDate(value) {\n  const s = String(value || '').trim();\n  if (/^\\d{4}-\\d{2}-\\d{2}$/.test(s)) return new Date(s + 'T00:00:00-05:00'); // medianoche Colombia\n  const iso = /[zZ]|[+-]\\d{2}:?\\d{2}$/.test(s) ? s : (s.includes('T') ? s + '-05:00' : s);\n  const d = new Date(iso);\n  return isNaN(d.getTime()) || !/^\\d{4}-\\d{2}-\\d{2}/.test(s) ? null : d;\n}\n\n// Property 24: eventos con fecha en (now, now + 48h].\nfunction eventsInWindow(events, now, hours) {\n  const t0 = (now || new Date()).getTime();\n  const t1 = t0 + (hours || 48) * 3600 * 1000;\n  return (events || [])\n    .map((e) => ({ e, d: parseEventDate(e.event_date) }))\n    .filter(({ d }) => d && d.getTime() > t0 && d.getTime() <= t1)\n    .map(({ e }) => ({ ...e, event_key: `${e.event_name}|${e.event_date}` }));\n}\n\nfunction llmText(resp) {\n  try {\n    const t = resp.choices[0].message.content;\n    return typeof t === 'string' ? t.trim() : '';\n  } catch (e) {\n    return '';\n  }\n}\n\n// ---- nodo ----\nconst ctx = $('Normalizar intención').first().json;\nconst events = calendarEvents($input.all().map((i) => i.json));\nreturn [{ json: { messages: buildMessages(calendarContext(events), ctx.history, ctx.message) } }];"
+      }
+    },
+    {
+      "id": "5ea20a4b-b083-527c-9a65-3584f04da2f1",
+      "name": "Responder calendario no disponible",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        2640,
+        100
+      ],
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ response: \"El calendario académico está temporalmente no disponible. Intenta de nuevo más tarde.\", intent: $('Normalizar intención').first().json.intent }) }}",
+        "options": {
+          "responseCode": 200
+        }
+      }
+    },
+    {
+      "id": "c5f28c2e-8fc0-5113-9931-43dc8bd6605e",
+      "name": "Cursos del estudiante (MCP)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2200,
+        400
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "http://mcp-server:8000/tools/get_student_courses",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ session_id: $('Normalizar intención').first().json.session_id }) }}",
+        "options": {
+          "timeout": 4000
+        }
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "id": "549203db-975f-50fc-a1d9-aff376235360",
+      "name": "Prompt cursos",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2420,
+        400
+      ],
+      "parameters": {
+        "jsCode": "// Funciones puras usadas dentro de los nodos Code de n8n.\n// build_workflows.py inserta este archivo (hasta la marca de export) en cada nodo Code,\n// y tests/test_n8n_code.py las prueba con Node.js.\n\nconst INTENT_LABELS = ['consulta-general', 'calendario', 'cursos-realizados', 'noticias'];\n\nconst FALLBACK_RESPONSE = 'Solo puedo ayudarte con temas académicos de la UNAB.';\n\nconst SYSTEM_BASE =\n  'Eres el asistente académico de la Universidad Autónoma de Bucaramanga (UNAB). ' +\n  'Responde SIEMPRE en español, de forma clara, breve y amable. ' +\n  'Solo atiendes temas académicos e institucionales de la UNAB. ' +\n  'Usa únicamente la información del contexto proporcionado; si no está, dilo con honestidad ' +\n  'y sugiere la dependencia de la UNAB a la que el estudiante puede acudir. No inventes datos.';\n\nconst CLASSIFIER_PROMPT =\n  'Clasifica el mensaje del estudiante en exactamente una de estas etiquetas:\\n' +\n  '- consulta-general: preguntas sobre normas, programas, plan de estudios, competencias, trámites o documentos institucionales.\\n' +\n  '- calendario: fechas académicas (matrículas, parciales, inicio/fin de clases, festivos, plazos).\\n' +\n  '- cursos-realizados: el progreso personal del estudiante (cursos aprobados, pendientes, en curso, notas, avance).\\n' +\n  '- noticias: noticias, eventos o novedades recientes de la universidad.\\n' +\n  'Responde solo con la etiqueta, sin explicación.';\n\nfunction stripAccents(s) {\n  return String(s).normalize('NFD').replace(/[̀-ͯ]/g, '');\n}\n\n// Property 5: siempre devuelve exactamente una etiqueta válida.\nfunction normalizeIntent(raw) {\n  const text = stripAccents(raw == null ? '' : raw).toLowerCase().trim();\n  const cleaned = text.replace(/[^a-z\\- ]/g, ' ').replace(/\\s+/g, ' ').trim();\n  const asLabel = cleaned.replace(/ /g, '-');\n  if (INTENT_LABELS.includes(asLabel)) return asLabel;\n  const found = INTENT_LABELS.filter((l) => cleaned.includes(l) || cleaned.includes(l.replace('-', ' ')));\n  if (found.length === 1) return found[0];\n  return 'consulta-general'; // Requirement 3.6: fallback\n}\n\nfunction bearerToken(headers) {\n  const h = headers || {};\n  const auth = String(h.authorization || h.Authorization || '').trim();\n  return /^bearer\\s+/i.test(auth) ? auth.replace(/^bearer\\s+/i, '').trim() : '';\n}\n\nfunction historyMessages(history) {\n  let h = history;\n  if (typeof h === 'string') {\n    try { h = JSON.parse(h); } catch (e) { h = []; }\n  }\n  if (!Array.isArray(h)) return [];\n  return h\n    .filter((m) => m && (m.role === 'user' || m.role === 'assistant') && typeof m.content === 'string')\n    .slice(-20) // Property 16: máximo 10 intercambios\n    .map((m) => ({ role: m.role, content: m.content }));\n}\n\nfunction buildMessages(systemExtra, history, message) {\n  return [\n    { role: 'system', content: SYSTEM_BASE + '\\n\\n' + systemExtra },\n    ...historyMessages(history),\n    { role: 'user', content: String(message || '') },\n  ];\n}\n\nfunction todayBogota(now) {\n  return (now || new Date()).toLocaleDateString('es-CO', {\n    timeZone: 'America/Bogota', weekday: 'long', year: 'numeric', month: 'long', day: 'numeric',\n  });\n}\n\nfunction ragContext(chunks) {\n  if (!Array.isArray(chunks) || chunks.length === 0) {\n    return 'CONTEXTO: (no se encontraron fragmentos relevantes en los documentos institucionales)';\n  }\n  return 'CONTEXTO (fragmentos de documentos oficiales CCD de la UNAB):\\n' +\n    chunks.map((c, i) => `[${i + 1}] (${c.document_name}) ${c.text}`).join('\\n\\n');\n}\n\n// Acepta encabezados en inglés o español en la hoja de Google Sheets.\nfunction normalizeEvent(row) {\n  const r = {};\n  for (const [k, v] of Object.entries(row || {})) r[stripAccents(k).toLowerCase().trim()] = v;\n  const name = r.event_name ?? r.evento ?? r.nombre ?? r.actividad ?? '';\n  const date = r.event_date ?? r.fecha ?? r.date ?? '';\n  const desc = r.description ?? r.descripcion ?? r.detalle ?? '';\n  return { event_name: String(name).trim(), event_date: String(date).trim(), description: String(desc).trim() };\n}\n\nfunction calendarEvents(rows) {\n  return (rows || [])\n    .filter((r) => r && typeof r === 'object' && !r.error)\n    .map(normalizeEvent)\n    .filter((e) => e.event_name && e.event_date)\n    .sort((a, b) => a.event_date.localeCompare(b.event_date));\n}\n\nfunction calendarContext(events, now) {\n  const list = events.length\n    ? events.map((e) => `- ${e.event_name}: ${e.event_date}${e.description ? ' — ' + e.description : ''}`).join('\\n')\n    : '(el calendario no tiene eventos registrados)';\n  return `Hoy es ${todayBogota(now)}.\\nCALENDARIO ACADÉMICO UNAB:\\n${list}`;\n}\n\nfunction coursesContext(record) {\n  const r = record || {};\n  const courses = Array.isArray(r.courses) ? r.courses : [];\n  const label = { completed: 'aprobado', in_progress: 'en curso', pending: 'pendiente' };\n  const lines = courses.map((c) =>\n    `- Semestre ${c.semester}: ${c.course_code} ${c.course_name} — ${label[c.status] || c.status}` +\n    (c.grade != null ? ` (nota ${c.grade})` : ''));\n  return 'HISTORIAL ACADÉMICO DEL ESTUDIANTE (solo de este estudiante):\\n' +\n    `Total cursos: ${r.total || 0}; aprobados: ${r.completed || 0}; en curso: ${r.in_progress || 0}; ` +\n    `pendientes: ${r.pending || 0}; avance: ${r.progress_percentage || 0}%.\\n` + (lines.join('\\n') || '(sin cursos registrados)') +\n    '\\nIncluye en tu respuesta el porcentaje de avance cuando sea pertinente.';\n}\n\nfunction newsContext(news) {\n  const items = Array.isArray(news) ? news : [];\n  return 'NOTICIAS RECIENTES DE LA UNAB (más recientes primero):\\n' +\n    items.map((n) => `- [${String(n.published_at).slice(0, 10)}] ${n.title}: ${n.summary} (${n.source_url})`).join('\\n') +\n    '\\nResume solo las noticias relacionadas con la pregunta; si ninguna aplica, menciona las más recientes.';\n}\n\nfunction parseEventDate(value) {\n  const s = String(value || '').trim();\n  if (/^\\d{4}-\\d{2}-\\d{2}$/.test(s)) return new Date(s + 'T00:00:00-05:00'); // medianoche Colombia\n  const iso = /[zZ]|[+-]\\d{2}:?\\d{2}$/.test(s) ? s : (s.includes('T') ? s + '-05:00' : s);\n  const d = new Date(iso);\n  return isNaN(d.getTime()) || !/^\\d{4}-\\d{2}-\\d{2}/.test(s) ? null : d;\n}\n\n// Property 24: eventos con fecha en (now, now + 48h].\nfunction eventsInWindow(events, now, hours) {\n  const t0 = (now || new Date()).getTime();\n  const t1 = t0 + (hours || 48) * 3600 * 1000;\n  return (events || [])\n    .map((e) => ({ e, d: parseEventDate(e.event_date) }))\n    .filter(({ d }) => d && d.getTime() > t0 && d.getTime() <= t1)\n    .map(({ e }) => ({ ...e, event_key: `${e.event_name}|${e.event_date}` }));\n}\n\nfunction llmText(resp) {\n  try {\n    const t = resp.choices[0].message.content;\n    return typeof t === 'string' ? t.trim() : '';\n  } catch (e) {\n    return '';\n  }\n}\n\n// ---- nodo ----\nconst ctx = $('Normalizar intención').first().json;\nreturn [{ json: { messages: buildMessages(coursesContext($input.first().json), ctx.history, ctx.message) } }];"
+      }
+    },
+    {
+      "id": "add973dc-eef8-5927-9616-eca92c4dc1d5",
+      "name": "Registrar fallo BD Estudiantes",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2420,
+        560
+      ],
+      "parameters": {
+        "jsCode": "// Funciones puras usadas dentro de los nodos Code de n8n.\n// build_workflows.py inserta este archivo (hasta la marca de export) en cada nodo Code,\n// y tests/test_n8n_code.py las prueba con Node.js.\n\nconst INTENT_LABELS = ['consulta-general', 'calendario', 'cursos-realizados', 'noticias'];\n\nconst FALLBACK_RESPONSE = 'Solo puedo ayudarte con temas académicos de la UNAB.';\n\nconst SYSTEM_BASE =\n  'Eres el asistente académico de la Universidad Autónoma de Bucaramanga (UNAB). ' +\n  'Responde SIEMPRE en español, de forma clara, breve y amable. ' +\n  'Solo atiendes temas académicos e institucionales de la UNAB. ' +\n  'Usa únicamente la información del contexto proporcionado; si no está, dilo con honestidad ' +\n  'y sugiere la dependencia de la UNAB a la que el estudiante puede acudir. No inventes datos.';\n\nconst CLASSIFIER_PROMPT =\n  'Clasifica el mensaje del estudiante en exactamente una de estas etiquetas:\\n' +\n  '- consulta-general: preguntas sobre normas, programas, plan de estudios, competencias, trámites o documentos institucionales.\\n' +\n  '- calendario: fechas académicas (matrículas, parciales, inicio/fin de clases, festivos, plazos).\\n' +\n  '- cursos-realizados: el progreso personal del estudiante (cursos aprobados, pendientes, en curso, notas, avance).\\n' +\n  '- noticias: noticias, eventos o novedades recientes de la universidad.\\n' +\n  'Responde solo con la etiqueta, sin explicación.';\n\nfunction stripAccents(s) {\n  return String(s).normalize('NFD').replace(/[̀-ͯ]/g, '');\n}\n\n// Property 5: siempre devuelve exactamente una etiqueta válida.\nfunction normalizeIntent(raw) {\n  const text = stripAccents(raw == null ? '' : raw).toLowerCase().trim();\n  const cleaned = text.replace(/[^a-z\\- ]/g, ' ').replace(/\\s+/g, ' ').trim();\n  const asLabel = cleaned.replace(/ /g, '-');\n  if (INTENT_LABELS.includes(asLabel)) return asLabel;\n  const found = INTENT_LABELS.filter((l) => cleaned.includes(l) || cleaned.includes(l.replace('-', ' ')));\n  if (found.length === 1) return found[0];\n  return 'consulta-general'; // Requirement 3.6: fallback\n}\n\nfunction bearerToken(headers) {\n  const h = headers || {};\n  const auth = String(h.authorization || h.Authorization || '').trim();\n  return /^bearer\\s+/i.test(auth) ? auth.replace(/^bearer\\s+/i, '').trim() : '';\n}\n\nfunction historyMessages(history) {\n  let h = history;\n  if (typeof h === 'string') {\n    try { h = JSON.parse(h); } catch (e) { h = []; }\n  }\n  if (!Array.isArray(h)) return [];\n  return h\n    .filter((m) => m && (m.role === 'user' || m.role === 'assistant') && typeof m.content === 'string')\n    .slice(-20) // Property 16: máximo 10 intercambios\n    .map((m) => ({ role: m.role, content: m.content }));\n}\n\nfunction buildMessages(systemExtra, history, message) {\n  return [\n    { role: 'system', content: SYSTEM_BASE + '\\n\\n' + systemExtra },\n    ...historyMessages(history),\n    { role: 'user', content: String(message || '') },\n  ];\n}\n\nfunction todayBogota(now) {\n  return (now || new Date()).toLocaleDateString('es-CO', {\n    timeZone: 'America/Bogota', weekday: 'long', year: 'numeric', month: 'long', day: 'numeric',\n  });\n}\n\nfunction ragContext(chunks) {\n  if (!Array.isArray(chunks) || chunks.length === 0) {\n    return 'CONTEXTO: (no se encontraron fragmentos relevantes en los documentos institucionales)';\n  }\n  return 'CONTEXTO (fragmentos de documentos oficiales CCD de la UNAB):\\n' +\n    chunks.map((c, i) => `[${i + 1}] (${c.document_name}) ${c.text}`).join('\\n\\n');\n}\n\n// Acepta encabezados en inglés o español en la hoja de Google Sheets.\nfunction normalizeEvent(row) {\n  const r = {};\n  for (const [k, v] of Object.entries(row || {})) r[stripAccents(k).toLowerCase().trim()] = v;\n  const name = r.event_name ?? r.evento ?? r.nombre ?? r.actividad ?? '';\n  const date = r.event_date ?? r.fecha ?? r.date ?? '';\n  const desc = r.description ?? r.descripcion ?? r.detalle ?? '';\n  return { event_name: String(name).trim(), event_date: String(date).trim(), description: String(desc).trim() };\n}\n\nfunction calendarEvents(rows) {\n  return (rows || [])\n    .filter((r) => r && typeof r === 'object' && !r.error)\n    .map(normalizeEvent)\n    .filter((e) => e.event_name && e.event_date)\n    .sort((a, b) => a.event_date.localeCompare(b.event_date));\n}\n\nfunction calendarContext(events, now) {\n  const list = events.length\n    ? events.map((e) => `- ${e.event_name}: ${e.event_date}${e.description ? ' — ' + e.description : ''}`).join('\\n')\n    : '(el calendario no tiene eventos registrados)';\n  return `Hoy es ${todayBogota(now)}.\\nCALENDARIO ACADÉMICO UNAB:\\n${list}`;\n}\n\nfunction coursesContext(record) {\n  const r = record || {};\n  const courses = Array.isArray(r.courses) ? r.courses : [];\n  const label = { completed: 'aprobado', in_progress: 'en curso', pending: 'pendiente' };\n  const lines = courses.map((c) =>\n    `- Semestre ${c.semester}: ${c.course_code} ${c.course_name} — ${label[c.status] || c.status}` +\n    (c.grade != null ? ` (nota ${c.grade})` : ''));\n  return 'HISTORIAL ACADÉMICO DEL ESTUDIANTE (solo de este estudiante):\\n' +\n    `Total cursos: ${r.total || 0}; aprobados: ${r.completed || 0}; en curso: ${r.in_progress || 0}; ` +\n    `pendientes: ${r.pending || 0}; avance: ${r.progress_percentage || 0}%.\\n` + (lines.join('\\n') || '(sin cursos registrados)') +\n    '\\nIncluye en tu respuesta el porcentaje de avance cuando sea pertinente.';\n}\n\nfunction newsContext(news) {\n  const items = Array.isArray(news) ? news : [];\n  return 'NOTICIAS RECIENTES DE LA UNAB (más recientes primero):\\n' +\n    items.map((n) => `- [${String(n.published_at).slice(0, 10)}] ${n.title}: ${n.summary} (${n.source_url})`).join('\\n') +\n    '\\nResume solo las noticias relacionadas con la pregunta; si ninguna aplica, menciona las más recientes.';\n}\n\nfunction parseEventDate(value) {\n  const s = String(value || '').trim();\n  if (/^\\d{4}-\\d{2}-\\d{2}$/.test(s)) return new Date(s + 'T00:00:00-05:00'); // medianoche Colombia\n  const iso = /[zZ]|[+-]\\d{2}:?\\d{2}$/.test(s) ? s : (s.includes('T') ? s + '-05:00' : s);\n  const d = new Date(iso);\n  return isNaN(d.getTime()) || !/^\\d{4}-\\d{2}-\\d{2}/.test(s) ? null : d;\n}\n\n// Property 24: eventos con fecha en (now, now + 48h].\nfunction eventsInWindow(events, now, hours) {\n  const t0 = (now || new Date()).getTime();\n  const t1 = t0 + (hours || 48) * 3600 * 1000;\n  return (events || [])\n    .map((e) => ({ e, d: parseEventDate(e.event_date) }))\n    .filter(({ d }) => d && d.getTime() > t0 && d.getTime() <= t1)\n    .map(({ e }) => ({ ...e, event_key: `${e.event_name}|${e.event_date}` }));\n}\n\nfunction llmText(resp) {\n  try {\n    const t = resp.choices[0].message.content;\n    return typeof t === 'string' ? t.trim() : '';\n  } catch (e) {\n    return '';\n  }\n}\n\n// ---- nodo ----\nconsole.error('[cursos-realizados] BD Estudiantes inalcanzable', JSON.stringify($input.first().json).slice(0, 500));\nreturn [{ json: { logged: true } }];"
+      }
+    },
+    {
+      "id": "98647d34-d213-5b61-86c1-11c165b2c2a8",
+      "name": "Responder cursos no disponible",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        2640,
+        560
+      ],
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ response: \"No pude consultar tu historial académico en este momento. Intenta de nuevo más tarde.\", intent: $('Normalizar intención').first().json.intent }) }}",
+        "options": {
+          "responseCode": 200
+        }
+      }
+    },
+    {
+      "id": "d612a8ea-fd0a-5ab3-87e0-4ac8ca1d5dc8",
+      "name": "Consultar noticias",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        2200,
+        760
+      ],
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT COALESCE(json_agg(n ORDER BY n.published_at DESC), '[]'::json) AS news FROM (SELECT title, published_at, summary, source_url FROM noticias ORDER BY published_at DESC LIMIT 20) n",
+        "options": {}
+      },
+      "credentials": {
+        "postgres": {
+          "id": "unabSupabasePg01",
+          "name": "Supabase Postgres"
+        }
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "id": "dc92818c-c4a4-5421-a1d7-589648a691e9",
+      "name": "¿Hay noticias?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        2420,
+        760
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
+          "conditions": [
+            {
+              "id": "397a2220-a2dd-50cf-b7bb-962f81f5fe71",
+              "leftValue": "={{ ($json.news || []).length }}",
+              "rightValue": 0,
+              "operator": {
+                "type": "number",
+                "operation": "gt",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "f667b785-2bc1-552d-b58a-42622d428c6f",
+      "name": "Prompt noticias",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2640,
+        760
+      ],
+      "parameters": {
+        "jsCode": "// Funciones puras usadas dentro de los nodos Code de n8n.\n// build_workflows.py inserta este archivo (hasta la marca de export) en cada nodo Code,\n// y tests/test_n8n_code.py las prueba con Node.js.\n\nconst INTENT_LABELS = ['consulta-general', 'calendario', 'cursos-realizados', 'noticias'];\n\nconst FALLBACK_RESPONSE = 'Solo puedo ayudarte con temas académicos de la UNAB.';\n\nconst SYSTEM_BASE =\n  'Eres el asistente académico de la Universidad Autónoma de Bucaramanga (UNAB). ' +\n  'Responde SIEMPRE en español, de forma clara, breve y amable. ' +\n  'Solo atiendes temas académicos e institucionales de la UNAB. ' +\n  'Usa únicamente la información del contexto proporcionado; si no está, dilo con honestidad ' +\n  'y sugiere la dependencia de la UNAB a la que el estudiante puede acudir. No inventes datos.';\n\nconst CLASSIFIER_PROMPT =\n  'Clasifica el mensaje del estudiante en exactamente una de estas etiquetas:\\n' +\n  '- consulta-general: preguntas sobre normas, programas, plan de estudios, competencias, trámites o documentos institucionales.\\n' +\n  '- calendario: fechas académicas (matrículas, parciales, inicio/fin de clases, festivos, plazos).\\n' +\n  '- cursos-realizados: el progreso personal del estudiante (cursos aprobados, pendientes, en curso, notas, avance).\\n' +\n  '- noticias: noticias, eventos o novedades recientes de la universidad.\\n' +\n  'Responde solo con la etiqueta, sin explicación.';\n\nfunction stripAccents(s) {\n  return String(s).normalize('NFD').replace(/[̀-ͯ]/g, '');\n}\n\n// Property 5: siempre devuelve exactamente una etiqueta válida.\nfunction normalizeIntent(raw) {\n  const text = stripAccents(raw == null ? '' : raw).toLowerCase().trim();\n  const cleaned = text.replace(/[^a-z\\- ]/g, ' ').replace(/\\s+/g, ' ').trim();\n  const asLabel = cleaned.replace(/ /g, '-');\n  if (INTENT_LABELS.includes(asLabel)) return asLabel;\n  const found = INTENT_LABELS.filter((l) => cleaned.includes(l) || cleaned.includes(l.replace('-', ' ')));\n  if (found.length === 1) return found[0];\n  return 'consulta-general'; // Requirement 3.6: fallback\n}\n\nfunction bearerToken(headers) {\n  const h = headers || {};\n  const auth = String(h.authorization || h.Authorization || '').trim();\n  return /^bearer\\s+/i.test(auth) ? auth.replace(/^bearer\\s+/i, '').trim() : '';\n}\n\nfunction historyMessages(history) {\n  let h = history;\n  if (typeof h === 'string') {\n    try { h = JSON.parse(h); } catch (e) { h = []; }\n  }\n  if (!Array.isArray(h)) return [];\n  return h\n    .filter((m) => m && (m.role === 'user' || m.role === 'assistant') && typeof m.content === 'string')\n    .slice(-20) // Property 16: máximo 10 intercambios\n    .map((m) => ({ role: m.role, content: m.content }));\n}\n\nfunction buildMessages(systemExtra, history, message) {\n  return [\n    { role: 'system', content: SYSTEM_BASE + '\\n\\n' + systemExtra },\n    ...historyMessages(history),\n    { role: 'user', content: String(message || '') },\n  ];\n}\n\nfunction todayBogota(now) {\n  return (now || new Date()).toLocaleDateString('es-CO', {\n    timeZone: 'America/Bogota', weekday: 'long', year: 'numeric', month: 'long', day: 'numeric',\n  });\n}\n\nfunction ragContext(chunks) {\n  if (!Array.isArray(chunks) || chunks.length === 0) {\n    return 'CONTEXTO: (no se encontraron fragmentos relevantes en los documentos institucionales)';\n  }\n  return 'CONTEXTO (fragmentos de documentos oficiales CCD de la UNAB):\\n' +\n    chunks.map((c, i) => `[${i + 1}] (${c.document_name}) ${c.text}`).join('\\n\\n');\n}\n\n// Acepta encabezados en inglés o español en la hoja de Google Sheets.\nfunction normalizeEvent(row) {\n  const r = {};\n  for (const [k, v] of Object.entries(row || {})) r[stripAccents(k).toLowerCase().trim()] = v;\n  const name = r.event_name ?? r.evento ?? r.nombre ?? r.actividad ?? '';\n  const date = r.event_date ?? r.fecha ?? r.date ?? '';\n  const desc = r.description ?? r.descripcion ?? r.detalle ?? '';\n  return { event_name: String(name).trim(), event_date: String(date).trim(), description: String(desc).trim() };\n}\n\nfunction calendarEvents(rows) {\n  return (rows || [])\n    .filter((r) => r && typeof r === 'object' && !r.error)\n    .map(normalizeEvent)\n    .filter((e) => e.event_name && e.event_date)\n    .sort((a, b) => a.event_date.localeCompare(b.event_date));\n}\n\nfunction calendarContext(events, now) {\n  const list = events.length\n    ? events.map((e) => `- ${e.event_name}: ${e.event_date}${e.description ? ' — ' + e.description : ''}`).join('\\n')\n    : '(el calendario no tiene eventos registrados)';\n  return `Hoy es ${todayBogota(now)}.\\nCALENDARIO ACADÉMICO UNAB:\\n${list}`;\n}\n\nfunction coursesContext(record) {\n  const r = record || {};\n  const courses = Array.isArray(r.courses) ? r.courses : [];\n  const label = { completed: 'aprobado', in_progress: 'en curso', pending: 'pendiente' };\n  const lines = courses.map((c) =>\n    `- Semestre ${c.semester}: ${c.course_code} ${c.course_name} — ${label[c.status] || c.status}` +\n    (c.grade != null ? ` (nota ${c.grade})` : ''));\n  return 'HISTORIAL ACADÉMICO DEL ESTUDIANTE (solo de este estudiante):\\n' +\n    `Total cursos: ${r.total || 0}; aprobados: ${r.completed || 0}; en curso: ${r.in_progress || 0}; ` +\n    `pendientes: ${r.pending || 0}; avance: ${r.progress_percentage || 0}%.\\n` + (lines.join('\\n') || '(sin cursos registrados)') +\n    '\\nIncluye en tu respuesta el porcentaje de avance cuando sea pertinente.';\n}\n\nfunction newsContext(news) {\n  const items = Array.isArray(news) ? news : [];\n  return 'NOTICIAS RECIENTES DE LA UNAB (más recientes primero):\\n' +\n    items.map((n) => `- [${String(n.published_at).slice(0, 10)}] ${n.title}: ${n.summary} (${n.source_url})`).join('\\n') +\n    '\\nResume solo las noticias relacionadas con la pregunta; si ninguna aplica, menciona las más recientes.';\n}\n\nfunction parseEventDate(value) {\n  const s = String(value || '').trim();\n  if (/^\\d{4}-\\d{2}-\\d{2}$/.test(s)) return new Date(s + 'T00:00:00-05:00'); // medianoche Colombia\n  const iso = /[zZ]|[+-]\\d{2}:?\\d{2}$/.test(s) ? s : (s.includes('T') ? s + '-05:00' : s);\n  const d = new Date(iso);\n  return isNaN(d.getTime()) || !/^\\d{4}-\\d{2}-\\d{2}/.test(s) ? null : d;\n}\n\n// Property 24: eventos con fecha en (now, now + 48h].\nfunction eventsInWindow(events, now, hours) {\n  const t0 = (now || new Date()).getTime();\n  const t1 = t0 + (hours || 48) * 3600 * 1000;\n  return (events || [])\n    .map((e) => ({ e, d: parseEventDate(e.event_date) }))\n    .filter(({ d }) => d && d.getTime() > t0 && d.getTime() <= t1)\n    .map(({ e }) => ({ ...e, event_key: `${e.event_name}|${e.event_date}` }));\n}\n\nfunction llmText(resp) {\n  try {\n    const t = resp.choices[0].message.content;\n    return typeof t === 'string' ? t.trim() : '';\n  } catch (e) {\n    return '';\n  }\n}\n\n// ---- nodo ----\nconst ctx = $('Normalizar intención').first().json;\nreturn [{ json: { messages: buildMessages(newsContext($input.first().json.news), ctx.history, ctx.message) } }];"
+      }
+    },
+    {
+      "id": "8d5970a5-6d05-5826-acb5-e93077b56fd4",
+      "name": "Responder sin noticias",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        2640,
+        920
+      ],
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ response: \"No hay noticias recientes disponibles.\", intent: $('Normalizar intención').first().json.intent }) }}",
+        "options": {
+          "responseCode": 200
+        }
+      }
+    },
+    {
+      "id": "36963182-04c1-550e-b5f4-c443fa79fbf9",
+      "name": "Generar respuesta (LLM)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2900,
+        300
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.LLM_API_URL || 'https://api.openai.com/v1/chat/completions' }}",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ model: $env.LLM_MODEL || 'gpt-4o-mini', messages: $json.messages, temperature: 0.2, max_tokens: 700 }) }}",
+        "options": {
+          "timeout": 8000
+        },
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "openAiApi"
+      },
+      "onError": "continueErrorOutput",
+      "credentials": {
+        "openAiApi": {
+          "id": "unabOpenAiApi001",
+          "name": "OpenAI API"
+        }
+      }
+    },
+    {
+      "id": "37042476-b0ae-5cee-b858-8174185462be",
+      "name": "Responder error LLM",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        3120,
+        520
+      ],
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ error: 'El asistente tardó demasiado en responder. Intenta de nuevo.' }) }}",
+        "options": {
+          "responseCode": 504
+        }
+      }
+    },
+    {
+      "id": "37d3b243-4614-5795-87da-3a363655d0db",
+      "name": "Extraer respuesta",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3120,
+        300
+      ],
+      "parameters": {
+        "jsCode": "// Funciones puras usadas dentro de los nodos Code de n8n.\n// build_workflows.py inserta este archivo (hasta la marca de export) en cada nodo Code,\n// y tests/test_n8n_code.py las prueba con Node.js.\n\nconst INTENT_LABELS = ['consulta-general', 'calendario', 'cursos-realizados', 'noticias'];\n\nconst FALLBACK_RESPONSE = 'Solo puedo ayudarte con temas académicos de la UNAB.';\n\nconst SYSTEM_BASE =\n  'Eres el asistente académico de la Universidad Autónoma de Bucaramanga (UNAB). ' +\n  'Responde SIEMPRE en español, de forma clara, breve y amable. ' +\n  'Solo atiendes temas académicos e institucionales de la UNAB. ' +\n  'Usa únicamente la información del contexto proporcionado; si no está, dilo con honestidad ' +\n  'y sugiere la dependencia de la UNAB a la que el estudiante puede acudir. No inventes datos.';\n\nconst CLASSIFIER_PROMPT =\n  'Clasifica el mensaje del estudiante en exactamente una de estas etiquetas:\\n' +\n  '- consulta-general: preguntas sobre normas, programas, plan de estudios, competencias, trámites o documentos institucionales.\\n' +\n  '- calendario: fechas académicas (matrículas, parciales, inicio/fin de clases, festivos, plazos).\\n' +\n  '- cursos-realizados: el progreso personal del estudiante (cursos aprobados, pendientes, en curso, notas, avance).\\n' +\n  '- noticias: noticias, eventos o novedades recientes de la universidad.\\n' +\n  'Responde solo con la etiqueta, sin explicación.';\n\nfunction stripAccents(s) {\n  return String(s).normalize('NFD').replace(/[̀-ͯ]/g, '');\n}\n\n// Property 5: siempre devuelve exactamente una etiqueta válida.\nfunction normalizeIntent(raw) {\n  const text = stripAccents(raw == null ? '' : raw).toLowerCase().trim();\n  const cleaned = text.replace(/[^a-z\\- ]/g, ' ').replace(/\\s+/g, ' ').trim();\n  const asLabel = cleaned.replace(/ /g, '-');\n  if (INTENT_LABELS.includes(asLabel)) return asLabel;\n  const found = INTENT_LABELS.filter((l) => cleaned.includes(l) || cleaned.includes(l.replace('-', ' ')));\n  if (found.length === 1) return found[0];\n  return 'consulta-general'; // Requirement 3.6: fallback\n}\n\nfunction bearerToken(headers) {\n  const h = headers || {};\n  const auth = String(h.authorization || h.Authorization || '').trim();\n  return /^bearer\\s+/i.test(auth) ? auth.replace(/^bearer\\s+/i, '').trim() : '';\n}\n\nfunction historyMessages(history) {\n  let h = history;\n  if (typeof h === 'string') {\n    try { h = JSON.parse(h); } catch (e) { h = []; }\n  }\n  if (!Array.isArray(h)) return [];\n  return h\n    .filter((m) => m && (m.role === 'user' || m.role === 'assistant') && typeof m.content === 'string')\n    .slice(-20) // Property 16: máximo 10 intercambios\n    .map((m) => ({ role: m.role, content: m.content }));\n}\n\nfunction buildMessages(systemExtra, history, message) {\n  return [\n    { role: 'system', content: SYSTEM_BASE + '\\n\\n' + systemExtra },\n    ...historyMessages(history),\n    { role: 'user', content: String(message || '') },\n  ];\n}\n\nfunction todayBogota(now) {\n  return (now || new Date()).toLocaleDateString('es-CO', {\n    timeZone: 'America/Bogota', weekday: 'long', year: 'numeric', month: 'long', day: 'numeric',\n  });\n}\n\nfunction ragContext(chunks) {\n  if (!Array.isArray(chunks) || chunks.length === 0) {\n    return 'CONTEXTO: (no se encontraron fragmentos relevantes en los documentos institucionales)';\n  }\n  return 'CONTEXTO (fragmentos de documentos oficiales CCD de la UNAB):\\n' +\n    chunks.map((c, i) => `[${i + 1}] (${c.document_name}) ${c.text}`).join('\\n\\n');\n}\n\n// Acepta encabezados en inglés o español en la hoja de Google Sheets.\nfunction normalizeEvent(row) {\n  const r = {};\n  for (const [k, v] of Object.entries(row || {})) r[stripAccents(k).toLowerCase().trim()] = v;\n  const name = r.event_name ?? r.evento ?? r.nombre ?? r.actividad ?? '';\n  const date = r.event_date ?? r.fecha ?? r.date ?? '';\n  const desc = r.description ?? r.descripcion ?? r.detalle ?? '';\n  return { event_name: String(name).trim(), event_date: String(date).trim(), description: String(desc).trim() };\n}\n\nfunction calendarEvents(rows) {\n  return (rows || [])\n    .filter((r) => r && typeof r === 'object' && !r.error)\n    .map(normalizeEvent)\n    .filter((e) => e.event_name && e.event_date)\n    .sort((a, b) => a.event_date.localeCompare(b.event_date));\n}\n\nfunction calendarContext(events, now) {\n  const list = events.length\n    ? events.map((e) => `- ${e.event_name}: ${e.event_date}${e.description ? ' — ' + e.description : ''}`).join('\\n')\n    : '(el calendario no tiene eventos registrados)';\n  return `Hoy es ${todayBogota(now)}.\\nCALENDARIO ACADÉMICO UNAB:\\n${list}`;\n}\n\nfunction coursesContext(record) {\n  const r = record || {};\n  const courses = Array.isArray(r.courses) ? r.courses : [];\n  const label = { completed: 'aprobado', in_progress: 'en curso', pending: 'pendiente' };\n  const lines = courses.map((c) =>\n    `- Semestre ${c.semester}: ${c.course_code} ${c.course_name} — ${label[c.status] || c.status}` +\n    (c.grade != null ? ` (nota ${c.grade})` : ''));\n  return 'HISTORIAL ACADÉMICO DEL ESTUDIANTE (solo de este estudiante):\\n' +\n    `Total cursos: ${r.total || 0}; aprobados: ${r.completed || 0}; en curso: ${r.in_progress || 0}; ` +\n    `pendientes: ${r.pending || 0}; avance: ${r.progress_percentage || 0}%.\\n` + (lines.join('\\n') || '(sin cursos registrados)') +\n    '\\nIncluye en tu respuesta el porcentaje de avance cuando sea pertinente.';\n}\n\nfunction newsContext(news) {\n  const items = Array.isArray(news) ? news : [];\n  return 'NOTICIAS RECIENTES DE LA UNAB (más recientes primero):\\n' +\n    items.map((n) => `- [${String(n.published_at).slice(0, 10)}] ${n.title}: ${n.summary} (${n.source_url})`).join('\\n') +\n    '\\nResume solo las noticias relacionadas con la pregunta; si ninguna aplica, menciona las más recientes.';\n}\n\nfunction parseEventDate(value) {\n  const s = String(value || '').trim();\n  if (/^\\d{4}-\\d{2}-\\d{2}$/.test(s)) return new Date(s + 'T00:00:00-05:00'); // medianoche Colombia\n  const iso = /[zZ]|[+-]\\d{2}:?\\d{2}$/.test(s) ? s : (s.includes('T') ? s + '-05:00' : s);\n  const d = new Date(iso);\n  return isNaN(d.getTime()) || !/^\\d{4}-\\d{2}-\\d{2}/.test(s) ? null : d;\n}\n\n// Property 24: eventos con fecha en (now, now + 48h].\nfunction eventsInWindow(events, now, hours) {\n  const t0 = (now || new Date()).getTime();\n  const t1 = t0 + (hours || 48) * 3600 * 1000;\n  return (events || [])\n    .map((e) => ({ e, d: parseEventDate(e.event_date) }))\n    .filter(({ d }) => d && d.getTime() > t0 && d.getTime() <= t1)\n    .map(({ e }) => ({ ...e, event_key: `${e.event_name}|${e.event_date}` }));\n}\n\nfunction llmText(resp) {\n  try {\n    const t = resp.choices[0].message.content;\n    return typeof t === 'string' ? t.trim() : '';\n  } catch (e) {\n    return '';\n  }\n}\n\n// ---- nodo ----\nreturn [{ json: { llm_response: llmText($input.first().json) } }];"
+      }
+    },
+    {
+      "id": "ce6bf98d-f976-5b41-9352-2fd535def3cb",
+      "name": "Guardrails salida",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        3340,
+        300
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "http://guardrails:8080/validate-output",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ session_id: $('Normalizar intención').first().json.session_id, response: $json.llm_response }) }}",
+        "options": {
+          "timeout": 3000
+        }
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "id": "c48e50a0-0964-5adf-82ce-9cd5eaef8c15",
+      "name": "Respuesta final",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3560,
+        300
+      ],
+      "parameters": {
+        "jsCode": "// Funciones puras usadas dentro de los nodos Code de n8n.\n// build_workflows.py inserta este archivo (hasta la marca de export) en cada nodo Code,\n// y tests/test_n8n_code.py las prueba con Node.js.\n\nconst INTENT_LABELS = ['consulta-general', 'calendario', 'cursos-realizados', 'noticias'];\n\nconst FALLBACK_RESPONSE = 'Solo puedo ayudarte con temas académicos de la UNAB.';\n\nconst SYSTEM_BASE =\n  'Eres el asistente académico de la Universidad Autónoma de Bucaramanga (UNAB). ' +\n  'Responde SIEMPRE en español, de forma clara, breve y amable. ' +\n  'Solo atiendes temas académicos e institucionales de la UNAB. ' +\n  'Usa únicamente la información del contexto proporcionado; si no está, dilo con honestidad ' +\n  'y sugiere la dependencia de la UNAB a la que el estudiante puede acudir. No inventes datos.';\n\nconst CLASSIFIER_PROMPT =\n  'Clasifica el mensaje del estudiante en exactamente una de estas etiquetas:\\n' +\n  '- consulta-general: preguntas sobre normas, programas, plan de estudios, competencias, trámites o documentos institucionales.\\n' +\n  '- calendario: fechas académicas (matrículas, parciales, inicio/fin de clases, festivos, plazos).\\n' +\n  '- cursos-realizados: el progreso personal del estudiante (cursos aprobados, pendientes, en curso, notas, avance).\\n' +\n  '- noticias: noticias, eventos o novedades recientes de la universidad.\\n' +\n  'Responde solo con la etiqueta, sin explicación.';\n\nfunction stripAccents(s) {\n  return String(s).normalize('NFD').replace(/[̀-ͯ]/g, '');\n}\n\n// Property 5: siempre devuelve exactamente una etiqueta válida.\nfunction normalizeIntent(raw) {\n  const text = stripAccents(raw == null ? '' : raw).toLowerCase().trim();\n  const cleaned = text.replace(/[^a-z\\- ]/g, ' ').replace(/\\s+/g, ' ').trim();\n  const asLabel = cleaned.replace(/ /g, '-');\n  if (INTENT_LABELS.includes(asLabel)) return asLabel;\n  const found = INTENT_LABELS.filter((l) => cleaned.includes(l) || cleaned.includes(l.replace('-', ' ')));\n  if (found.length === 1) return found[0];\n  return 'consulta-general'; // Requirement 3.6: fallback\n}\n\nfunction bearerToken(headers) {\n  const h = headers || {};\n  const auth = String(h.authorization || h.Authorization || '').trim();\n  return /^bearer\\s+/i.test(auth) ? auth.replace(/^bearer\\s+/i, '').trim() : '';\n}\n\nfunction historyMessages(history) {\n  let h = history;\n  if (typeof h === 'string') {\n    try { h = JSON.parse(h); } catch (e) { h = []; }\n  }\n  if (!Array.isArray(h)) return [];\n  return h\n    .filter((m) => m && (m.role === 'user' || m.role === 'assistant') && typeof m.content === 'string')\n    .slice(-20) // Property 16: máximo 10 intercambios\n    .map((m) => ({ role: m.role, content: m.content }));\n}\n\nfunction buildMessages(systemExtra, history, message) {\n  return [\n    { role: 'system', content: SYSTEM_BASE + '\\n\\n' + systemExtra },\n    ...historyMessages(history),\n    { role: 'user', content: String(message || '') },\n  ];\n}\n\nfunction todayBogota(now) {\n  return (now || new Date()).toLocaleDateString('es-CO', {\n    timeZone: 'America/Bogota', weekday: 'long', year: 'numeric', month: 'long', day: 'numeric',\n  });\n}\n\nfunction ragContext(chunks) {\n  if (!Array.isArray(chunks) || chunks.length === 0) {\n    return 'CONTEXTO: (no se encontraron fragmentos relevantes en los documentos institucionales)';\n  }\n  return 'CONTEXTO (fragmentos de documentos oficiales CCD de la UNAB):\\n' +\n    chunks.map((c, i) => `[${i + 1}] (${c.document_name}) ${c.text}`).join('\\n\\n');\n}\n\n// Acepta encabezados en inglés o español en la hoja de Google Sheets.\nfunction normalizeEvent(row) {\n  const r = {};\n  for (const [k, v] of Object.entries(row || {})) r[stripAccents(k).toLowerCase().trim()] = v;\n  const name = r.event_name ?? r.evento ?? r.nombre ?? r.actividad ?? '';\n  const date = r.event_date ?? r.fecha ?? r.date ?? '';\n  const desc = r.description ?? r.descripcion ?? r.detalle ?? '';\n  return { event_name: String(name).trim(), event_date: String(date).trim(), description: String(desc).trim() };\n}\n\nfunction calendarEvents(rows) {\n  return (rows || [])\n    .filter((r) => r && typeof r === 'object' && !r.error)\n    .map(normalizeEvent)\n    .filter((e) => e.event_name && e.event_date)\n    .sort((a, b) => a.event_date.localeCompare(b.event_date));\n}\n\nfunction calendarContext(events, now) {\n  const list = events.length\n    ? events.map((e) => `- ${e.event_name}: ${e.event_date}${e.description ? ' — ' + e.description : ''}`).join('\\n')\n    : '(el calendario no tiene eventos registrados)';\n  return `Hoy es ${todayBogota(now)}.\\nCALENDARIO ACADÉMICO UNAB:\\n${list}`;\n}\n\nfunction coursesContext(record) {\n  const r = record || {};\n  const courses = Array.isArray(r.courses) ? r.courses : [];\n  const label = { completed: 'aprobado', in_progress: 'en curso', pending: 'pendiente' };\n  const lines = courses.map((c) =>\n    `- Semestre ${c.semester}: ${c.course_code} ${c.course_name} — ${label[c.status] || c.status}` +\n    (c.grade != null ? ` (nota ${c.grade})` : ''));\n  return 'HISTORIAL ACADÉMICO DEL ESTUDIANTE (solo de este estudiante):\\n' +\n    `Total cursos: ${r.total || 0}; aprobados: ${r.completed || 0}; en curso: ${r.in_progress || 0}; ` +\n    `pendientes: ${r.pending || 0}; avance: ${r.progress_percentage || 0}%.\\n` + (lines.join('\\n') || '(sin cursos registrados)') +\n    '\\nIncluye en tu respuesta el porcentaje de avance cuando sea pertinente.';\n}\n\nfunction newsContext(news) {\n  const items = Array.isArray(news) ? news : [];\n  return 'NOTICIAS RECIENTES DE LA UNAB (más recientes primero):\\n' +\n    items.map((n) => `- [${String(n.published_at).slice(0, 10)}] ${n.title}: ${n.summary} (${n.source_url})`).join('\\n') +\n    '\\nResume solo las noticias relacionadas con la pregunta; si ninguna aplica, menciona las más recientes.';\n}\n\nfunction parseEventDate(value) {\n  const s = String(value || '').trim();\n  if (/^\\d{4}-\\d{2}-\\d{2}$/.test(s)) return new Date(s + 'T00:00:00-05:00'); // medianoche Colombia\n  const iso = /[zZ]|[+-]\\d{2}:?\\d{2}$/.test(s) ? s : (s.includes('T') ? s + '-05:00' : s);\n  const d = new Date(iso);\n  return isNaN(d.getTime()) || !/^\\d{4}-\\d{2}-\\d{2}/.test(s) ? null : d;\n}\n\n// Property 24: eventos con fecha en (now, now + 48h].\nfunction eventsInWindow(events, now, hours) {\n  const t0 = (now || new Date()).getTime();\n  const t1 = t0 + (hours || 48) * 3600 * 1000;\n  return (events || [])\n    .map((e) => ({ e, d: parseEventDate(e.event_date) }))\n    .filter(({ d }) => d && d.getTime() > t0 && d.getTime() <= t1)\n    .map(({ e }) => ({ ...e, event_key: `${e.event_name}|${e.event_date}` }));\n}\n\nfunction llmText(resp) {\n  try {\n    const t = resp.choices[0].message.content;\n    return typeof t === 'string' ? t.trim() : '';\n  } catch (e) {\n    return '';\n  }\n}\n\n// ---- nodo ----\nconst g = $input.first().json;\n// Si guardrails falla o no responde, se aplica el fallback (fail-closed).\nconst response = typeof g.sanitized_response === 'string' && g.sanitized_response ? g.sanitized_response : FALLBACK_RESPONSE;\nreturn [{ json: { response } }];"
+      }
+    },
+    {
+      "id": "05befd41-660d-56a4-824d-bef5a97cc388",
+      "name": "Guardar memoria",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        3780,
+        300
+      ],
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT save_exchange($1, $2, $3)",
+        "options": {
+          "queryReplacement": "={{ [ $('Normalizar intención').first().json.session_id, $('Normalizar intención').first().json.message, $json.response ] }}"
+        }
+      },
+      "credentials": {
+        "postgres": {
+          "id": "unabSupabasePg01",
+          "name": "Supabase Postgres"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "id": "368cd1fe-f754-5683-ad9a-ede08d0e3801",
+      "name": "Responder OK",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        4000,
+        300
+      ],
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ response: $('Respuesta final').first().json.response, intent: $('Normalizar intención').first().json.intent }) }}",
+        "options": {
+          "responseCode": 200
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Webhook chat": {
+      "main": [
+        [
+          {
+            "node": "Preparar petición",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Preparar petición": {
+      "main": [
+        [
+          {
+            "node": "Validar sesión",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validar sesión": {
+      "main": [
+        [
+          {
+            "node": "¿Sesión válida?",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Responder 503 (BD)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "¿Sesión válida?": {
+      "main": [
+        [
+          {
+            "node": "Cargar historial",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Responder 401",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Cargar historial": {
+      "main": [
+        [
+          {
+            "node": "Guardrails entrada",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Responder 503 (BD)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Guardrails entrada": {
+      "main": [
+        [
+          {
+            "node": "¿Entrada permitida?",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Responder 503 (BD)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "¿Entrada permitida?": {
+      "main": [
+        [
+          {
+            "node": "Clasificar intención",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Responder mensaje rechazado",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Clasificar intención": {
+      "main": [
+        [
+          {
+            "node": "Normalizar intención",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Normalizar intención",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalizar intención": {
+      "main": [
+        [
+          {
+            "node": "Enrutar por intención",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Enrutar por intención": {
+      "main": [
+        [
+          {
+            "node": "Buscar documentos (MCP)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Leer calendario (Sheets)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Cursos del estudiante (MCP)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Consultar noticias",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Buscar documentos (MCP)": {
+      "main": [
+        [
+          {
+            "node": "Prompt consulta general",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Responder RAG no disponible",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Leer calendario (Sheets)": {
+      "main": [
+        [
+          {
+            "node": "¿Calendario disponible?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "¿Calendario disponible?": {
+      "main": [
+        [
+          {
+            "node": "Prompt calendario",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Responder calendario no disponible",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Cursos del estudiante (MCP)": {
+      "main": [
+        [
+          {
+            "node": "Prompt cursos",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Registrar fallo BD Estudiantes",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Registrar fallo BD Estudiantes": {
+      "main": [
+        [
+          {
+            "node": "Responder cursos no disponible",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Consultar noticias": {
+      "main": [
+        [
+          {
+            "node": "¿Hay noticias?",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Responder 503 (BD)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "¿Hay noticias?": {
+      "main": [
+        [
+          {
+            "node": "Prompt noticias",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Responder sin noticias",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prompt consulta general": {
+      "main": [
+        [
+          {
+            "node": "Generar respuesta (LLM)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prompt calendario": {
+      "main": [
+        [
+          {
+            "node": "Generar respuesta (LLM)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prompt cursos": {
+      "main": [
+        [
+          {
+            "node": "Generar respuesta (LLM)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prompt noticias": {
+      "main": [
+        [
+          {
+            "node": "Generar respuesta (LLM)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generar respuesta (LLM)": {
+      "main": [
+        [
+          {
+            "node": "Extraer respuesta",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Responder error LLM",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extraer respuesta": {
+      "main": [
+        [
+          {
+            "node": "Guardrails salida",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Guardrails salida": {
+      "main": [
+        [
+          {
+            "node": "Respuesta final",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respuesta final",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Respuesta final": {
+      "main": [
+        [
+          {
+            "node": "Guardar memoria",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Guardar memoria": {
+      "main": [
+        [
+          {
+            "node": "Responder OK",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1",
+    "executionTimeout": 30,
+    "timezone": "America/Bogota",
+    "saveDataErrorExecution": "all"
+  },
+  "tags": []
+}

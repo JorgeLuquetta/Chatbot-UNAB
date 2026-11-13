@@ -1,0 +1,21 @@
+{
+  "_comentario": "Fuentes de noticias UNAB. Ajusta los selectores CSS según el HTML real de cada página (inspecciona con F12).",
+  "sources": [
+    {
+      "url": "https://www.unab.edu.co/noticias",
+      "item_selector": "article, .views-row, .noticia, .card",
+      "title_selector": "h2, h3, .title, .titulo",
+      "date_selector": "time, .date, .fecha, [class*=date]",
+      "summary_selector": "p, .summary, .resumen, .field--name-body",
+      "link_selector": "a[href]"
+    },
+    {
+      "url": "https://www.unab.edu.co/eventos",
+      "item_selector": "article, .views-row, .evento, .card",
+      "title_selector": "h2, h3, .title, .titulo",
+      "date_selector": "time, .date, .fecha, [class*=date]",
+      "summary_selector": "p, .summary, .resumen",
+      "link_selector": "a[href]"
+    }
+  ]
+}

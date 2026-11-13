@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="Theme.UnabChatbot" parent="Theme.Material3.Light.NoActionBar">
+        <item name="colorPrimary">@color/unab_orange</item>
+        <item name="colorOnPrimary">@color/white</item>
+        <item name="colorPrimaryContainer">#FFDBC8</item>
+        <item name="colorSecondary">@color/unab_gray</item>
+        <item name="android:colorBackground">@color/surface_soft</item>
+        <item name="android:statusBarColor">@color/unab_orange_dark</item>
+    </style>
+</resources>

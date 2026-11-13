@@ -1,0 +1,74 @@
+# docker-compose.yml — Chatbot de Apoyo Académico UNAB (AWS EC2 Ubuntu)
+# Solo n8n publica un puerto hacia el host (9000). mcp-server (8000) y
+# guardrails (8080) son alcanzables únicamente dentro de la red bridge "backend".
+services:
+  n8n:
+    image: n8nio/n8n:latest
+    restart: unless-stopped
+    ports:
+      - "9000:5678"
+    environment:
+      - N8N_ENCRYPTION_KEY=${N8N_ENCRYPTION_KEY}
+      - N8N_HOST=${N8N_HOST:-localhost}
+      - N8N_PORT=5678
+      - N8N_PROTOCOL=${N8N_PROTOCOL:-http}
+      - WEBHOOK_URL=${WEBHOOK_URL:-http://localhost:9000/}
+      - GENERIC_TIMEZONE=America/Bogota
+      - TZ=America/Bogota
+      # Permite leer en expresiones SOLO configuración no secreta (IDs, modelo).
+      # Los secretos van en credenciales cifradas de n8n (Requirement 15.4).
+      - N8N_BLOCK_ENV_ACCESS_IN_NODE=false
+      - GOOGLE_SHEET_ID=${GOOGLE_SHEET_ID}
+      - GOOGLE_SHEET_NAME=${GOOGLE_SHEET_NAME:-Calendario Académico}
+      - FCM_PROJECT_ID=${FCM_PROJECT_ID}
+      - LLM_MODEL=${LLM_MODEL:-gpt-4o-mini}
+      # Cualquier endpoint compatible con OpenAI Chat Completions
+      - LLM_API_URL=${LLM_API_URL:-https://api.openai.com/v1/chat/completions}
+      - N8N_RUNNERS_ENABLED=true
+    volumes:
+      - n8n_data:/home/node/.n8n
+      - ./n8n/workflows:/workflows:ro
+    networks:
+      - backend
+    depends_on:
+      - mcp-server
+      - guardrails
+
+  mcp-server:
+    build: ./mcp-server
+    restart: unless-stopped
+    environment:
+      - SUPABASE_URL=${SUPABASE_URL}
+      - SUPABASE_KEY=${SUPABASE_KEY}
+      - SUPABASE_DB_URL=${SUPABASE_DB_URL}
+      - DB_SSL=${DB_SSL:-require}
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - EMBEDDING_MODEL=${EMBEDDING_MODEL:-text-embedding-3-small}
+      - CCD_DATA_DIR=/data/ccd
+    volumes:
+      - ./data/ccd:/data/ccd:ro
+      - ./mcp-server/sources.json:/app/sources.json:ro
+    expose:
+      - "8000"
+    networks:
+      - backend
+
+  guardrails:
+    build: ./guardrails
+    restart: unless-stopped
+    environment:
+      - SUPABASE_URL=${SUPABASE_URL}
+      - SUPABASE_KEY=${SUPABASE_KEY}
+      - SUPABASE_DB_URL=${SUPABASE_DB_URL}
+      - DB_SSL=${DB_SSL:-require}
+    expose:
+      - "8080"
+    networks:
+      - backend
+
+networks:
+  backend:
+    driver: bridge
+
+volumes:
+  n8n_data:

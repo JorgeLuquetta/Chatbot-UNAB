@@ -5,15 +5,18 @@ está definida, un modelo ligero (por defecto qwen2.5:1.5b) clasifica el texto:
   - entrada: ¿intenta manipular al asistente? (prompt injection que las reglas no cubren)
   - salida:  ¿la respuesta se mantiene en temas académicos de la UNAB?
 
-Si el LLM falla o tarda demasiado, se conserva el veredicto de las reglas (que ya permitió el texto):
-el LLM solo puede bloquear, nunca desbloquear. Así una caída de Ollama no deja al chatbot sin servicio.
+Si el LLM falla o tarda demasiado, las reglas siguen bloqueando entradas conocidas. Para las respuestas, un
+clasificador configurado debe confirmar el alcance; si no puede hacerlo, se usa la respuesta de fallback.
 """
 from __future__ import annotations
 
 import logging
 import os
+import re
 from dataclasses import dataclass
 from typing import Awaitable, Callable, Protocol
+
+from .rules import normalize
 
 log = logging.getLogger("guardrails.llm")
 
@@ -35,12 +38,15 @@ OUTPUT_PROMPT = (
 #                 Las preguntas normales se ahorran una llamada al LLM (de 5 a 60 s en CPU).
 #   "always":     en todos los mensajes.   "off": nunca (solo reglas).
 # La SALIDA siempre se revisa con el LLM si está activado.
-SUSPICIOUS_MARKERS = (
-    "instruc", "ignor", "olvid", "rol", "actua", "actúa", "finge", "fingir", "simula", "personaje", "eres ahora",
-    "a partir de ahora", "desde ahora", "sistema", "system", "prompt", "regla", "restric", "sin filtro", "jailbreak",
-    "developer", "desarrollador", "modo ", "revela", "clave", "contraseña", "password", "token", "secreto",
-    "admin", "root", "sql", "<", "{", "```", "anterior", "previo",
-)
+SUSPICIOUS_PATTERNS = tuple(re.compile(pattern) for pattern in (
+    r"\b(?:ignore|disregard|override|bypass)\b(?:\s+\w+){0,3}\s+\b(?:instructions?|rules?|prompts?|guidelines?)\b",
+    r"\b(?:ignora|ignorar|omite|omitir|desobedece|olvida|olvidar)\b(?:\s+\w+){0,3}\s+\b(?:instrucciones?|reglas?|directrices|restricciones?)\b",
+    r"\b(?:reveal|show|print|repeat|leak|muestra|revela|imprime|repite|dime)\b(?:\s+\w+){0,3}\s+\b(?:system prompt|prompt|instrucciones internas|instrucciones del sistema)\b",
+    r"\b(?:actua|finge|simula|pretend)\b.{0,30}\b(?:como|ser|you are|to be)\b",
+    r"\b(?:you are now|from now on|a partir de ahora|desde ahora)\b",
+    r"\b(?:developer mode|jailbreak|dan mode|modo desarrollador|sin restricciones)\b",
+    r"<\s*\|?\s*(?:im_start|system|endoftext)|\[/?inst\]|<<\s*/?sys\s*>>|\b(?:system|assistant|developer)\s*:",
+))
 SUSPICIOUS_LENGTH = 280
 
 
@@ -50,8 +56,8 @@ def needs_llm_input_check(message: str, mode: str = "suspicious") -> bool:
         return False
     if mode == "always":
         return True
-    text = (message or "").lower()
-    return len(text) > SUSPICIOUS_LENGTH or any(m in text for m in SUSPICIOUS_MARKERS)
+    text = normalize(message or "")
+    return len(text) > SUSPICIOUS_LENGTH or any(pattern.search(text) for pattern in SUSPICIOUS_PATTERNS)
 
 
 class LlmClassifier(Protocol):
@@ -72,7 +78,7 @@ class OllamaClassifier:
         try:
             return (await self.chat(system, text)).strip().upper()
         except Exception as exc:  # red, timeout, modelo no cargado...
-            log.warning("LLM de guardrails no disponible, se usa solo el veredicto de reglas: %s", exc)
+            log.warning("LLM de guardrails no disponible: %s", exc)
             return None
 
     async def is_attack(self, message: str) -> bool | None:

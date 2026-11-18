@@ -71,8 +71,14 @@ def create_app(sink: AuditSink | None = None, classifier: LlmClassifier | None |
     @app.post("/validate-output", response_model=OutputResponse)
     async def validate_output(req: OutputRequest) -> OutputResponse:
         verdict = check_output(req.response)
-        if verdict.allowed and app.state.llm is not None and await app.state.llm.is_off_topic(req.response):
-            verdict = Verdict(False, "output_scope", "LLM: respuesta fuera del ámbito académico")
+        if verdict.allowed and app.state.llm is not None:
+            is_off_topic = await app.state.llm.is_off_topic(req.response)
+            if is_off_topic is not False:
+                reason = (
+                    "LLM: respuesta fuera del ámbito académico"
+                    if is_off_topic else "LLM: no se pudo verificar el alcance de la respuesta"
+                )
+                verdict = Verdict(False, "output_scope", reason)
         if not verdict.allowed:
             await app.state.audit.write(
                 AuditLogEntry.create(req.session_id, verdict.rejection_type, verdict.reason, req.response))

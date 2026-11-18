@@ -147,7 +147,8 @@ Ver `mobile/README.md`. La app Kotlin original sigue en `android/` como referenc
 `granite-embedding:278m` (embeddings multilingües, 768 dims rellenados a 1536 en la columna `vector(1536)`;
 el relleno con ceros no cambia la similitud coseno). No hace falta ninguna cuenta ni API key.
 - Requiere ~4 GB de RAM. En CPU una respuesta tarda de 30 a 90 s; Ollama atiende una consulta a la vez.
-- Los guardrails aplican primero las reglas y luego el LLM (`GUARDRAILS_LLM_URL`). Si Ollama falla, quedan las reglas.
+- Con `GUARDRAILS_LLM_URL`, los guardrails aplican reglas y clasificación LLM. La salida se entrega solo si el
+  clasificador confirma su alcance; si falla o no da un veredicto, se devuelve el mensaje de fallback.
 - Para acelerar: menos historial (`LLM_HISTORY_MESSAGES`), respuestas más cortas (`LLM_MAX_TOKENS`) o más vCPU.
 - Para usar OpenAI u otro proveedor compatible: cambia `LLM_API_URL`, `LLM_MODEL`, `OPENAI_API_KEY` y
   `EMBEDDINGS_PROVIDER=openai` (y vuelve a ingerir los documentos).

@@ -69,10 +69,25 @@ def test_llm_failure_falls_back_to_rules():
     assert bad.json()["allowed"] is False
 
 
+def test_output_classifier_failure_returns_fallback():
+    c, sink = client(exc=TimeoutError("ollama no responde"))
+    with c:
+        r = c.post("/validate-output", json={"session_id": "s", "response": "Mañana lloverá en Bucaramanga."})
+    assert r.json() == {"allowed": False, "sanitized_response": FALLBACK_RESPONSE}
+    assert sink.entries[0].rejection_type == "output_scope"
+
+
 def test_unclear_llm_answer_is_not_a_verdict():
     cls = OllamaClassifier(fake_chat("no sé"))
     assert asyncio.run(cls.is_attack("hola")) is None
     assert asyncio.run(cls.is_off_topic("hola")) is None
+
+
+def test_academic_regulation_question_does_not_trigger_attack_classifier():
+    from app.llm import needs_llm_input_check
+
+    message = "¿Qué temas cubre el Reglamento Estudiantil de Pregrado de la UNAB?"
+    assert not needs_llm_input_check(message, "suspicious")
 
 
 def counting_client(answer):

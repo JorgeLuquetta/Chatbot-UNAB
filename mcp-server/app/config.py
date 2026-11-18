@@ -17,8 +17,12 @@ class Settings:
     embedding_model: str = field(default_factory=lambda: os.getenv("EMBEDDING_MODEL", "text-embedding-3-small"))
     embedding_dim: int = 1536
     embedding_batch_size: int = 100
-    chunk_max_tokens: int = 512
-    chunk_overlap: int = 50
+    # Ollama (embeddings locales gratuitos)
+    ollama_url: str = field(default_factory=lambda: os.getenv("OLLAMA_URL", "http://ollama:11434"))
+    ollama_embed_model: str = field(default_factory=lambda: os.getenv("OLLAMA_EMBED_MODEL", "granite-embedding:278m"))
+    # Fragmentos más cortos = prompts más cortos para un LLM local en CPU (y caben en los 512 tokens de granite)
+    chunk_max_tokens: int = field(default_factory=lambda: int(os.getenv("CHUNK_MAX_TOKENS", "512")))
+    chunk_overlap: int = field(default_factory=lambda: int(os.getenv("CHUNK_OVERLAP", "50")))
     ccd_data_dir: Path = field(default_factory=lambda: Path(os.getenv("CCD_DATA_DIR", "/data/ccd")))
     sources_file: Path = field(default_factory=lambda: Path(os.getenv("NEWS_SOURCES_FILE", "/app/sources.json")))
     http_timeout_s: float = 10.0

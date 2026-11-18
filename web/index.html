@@ -1,0 +1,198 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Chatbot UNAB</title>
+<style>
+  :root {
+    --bg: #f4f5f7; --panel: #ffffff; --text: #1d2330; --muted: #6b7385;
+    --line: #e2e5ea; --brand: #c8102e; --brand-text: #ffffff;
+    --me: #c8102e; --me-text: #ffffff; --bot: #eef0f3; --bot-text: #1d2330; --warn: #9a3412; --warn-bg: #fff4e5;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #12141a; --panel: #1b1e26; --text: #e7e9ee; --muted: #9aa1b1;
+      --line: #2b2f3a; --brand: #e0384f; --brand-text: #ffffff;
+      --me: #b8263b; --me-text: #ffffff; --bot: #262a35; --bot-text: #e7e9ee; --warn: #fdba74; --warn-bg: #3a2614;
+    }
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body { background: var(--bg); color: var(--text); font: 16px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  .app { max-width: 760px; height: 100%; margin: 0 auto; display: flex; flex-direction: column; background: var(--panel); border-inline: 1px solid var(--line); }
+  header { display: flex; align-items: center; gap: 12px; padding: 14px 16px; border-bottom: 1px solid var(--line); }
+  .logo { width: 36px; height: 36px; border-radius: 10px; background: var(--brand); color: var(--brand-text); display: grid; place-items: center; font-weight: 700; flex: none; }
+  header h1 { font-size: 17px; margin: 0; }
+  header p { margin: 0; font-size: 13px; color: var(--muted); }
+  .who { margin-left: auto; font-size: 13px; color: var(--muted); text-align: right; }
+  button.link { background: none; border: 0; color: var(--brand); cursor: pointer; padding: 0; font: inherit; }
+  #log { flex: 1; overflow-y: auto; padding: 16px; display: flex; flex-direction: column; gap: 10px; }
+  .msg { max-width: 85%; padding: 10px 13px; border-radius: 14px; white-space: pre-wrap; word-wrap: break-word; }
+  .me { align-self: flex-end; background: var(--me); color: var(--me-text); border-bottom-right-radius: 4px; }
+  .bot { align-self: flex-start; background: var(--bot); color: var(--bot-text); border-bottom-left-radius: 4px; }
+  .bot.warn { background: var(--warn-bg); color: var(--warn); }
+  .tag { display: block; font-size: 11px; color: var(--muted); margin-top: 4px; }
+  .chips { display: flex; flex-wrap: wrap; gap: 8px; align-self: flex-start; max-width: 95%; }
+  .chips button { border: 1px solid var(--line); background: var(--panel); color: var(--text); border-radius: 999px; padding: 6px 12px; cursor: pointer; font: inherit; font-size: 14px; }
+  .chips button:hover { border-color: var(--brand); }
+  form { display: flex; gap: 8px; padding: 12px 16px; border-top: 1px solid var(--line); }
+  input { flex: 1; min-width: 0; padding: 11px 13px; border: 1px solid var(--line); border-radius: 10px; background: var(--bg); color: var(--text); font: inherit; }
+  input:focus { outline: 2px solid var(--brand); outline-offset: -1px; }
+  form button { padding: 0 18px; border: 0; border-radius: 10px; background: var(--brand); color: var(--brand-text); font: inherit; font-weight: 600; cursor: pointer; }
+  form button:disabled { opacity: .55; cursor: default; }
+  .typing::after { content: "Escribiendo…"; animation: blink 1.2s infinite; }
+  @keyframes blink { 50% { opacity: .4; } }
+</style>
+</head>
+<body>
+<div class="app">
+  <header>
+    <div class="logo">U</div>
+    <div>
+      <h1>Chatbot UNAB</h1>
+      <p>Asistente académico · Reglamentos, cursos, noticias y calendario</p>
+    </div>
+    <div class="who" id="who" hidden>
+      <div id="whoname"></div>
+      <button class="link" id="change" type="button">Cambiar estudiante</button>
+    </div>
+  </header>
+  <div id="log" aria-live="polite"></div>
+  <form id="chatform" autocomplete="off">
+    <input id="msg" placeholder="Escribe tu ID de estudiante…" maxlength="1000" required>
+    <button type="submit" id="send">Enviar</button>
+  </form>
+</div>
+
+<script>
+const $ = (id) => document.getElementById(id);
+const store = {
+  get(k) { try { return localStorage.getItem(k); } catch { return null; } },
+  set(k, v) { try { localStorage.setItem(k, v); } catch {} },
+  del(k) { try { localStorage.removeItem(k); } catch {} },
+};
+const LABELS = { "consulta-general": "Reglamento", "cursos-realizados": "Tu historial", "noticias": "Noticias", "calendario": "Calendario" };
+const SUGGESTIONS = ["¿Cuál es mi avance en la carrera?", "¿Qué materias tengo pendientes?", "¿Cuáles son los requisitos de grado?", "¿Qué noticias hay en la universidad?"];
+const ID_RE = /\b(U\d{8})\b/i;
+let student = null;   // { student_id, full_name, program, current_semester, progress_percentage }
+let busy = false;
+
+async function post(path, body, ms) {
+  const ctrl = new AbortController();
+  const t = setTimeout(() => ctrl.abort(), ms);
+  try {
+    const r = await fetch(path, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body), signal: ctrl.signal });
+    let data = {};
+    try { data = await r.json(); } catch {}
+    return { status: r.status, data };
+  } finally { clearTimeout(t); }
+}
+
+function bubble(text, cls, tag) {
+  const d = document.createElement("div");
+  d.className = "msg " + cls;
+  d.textContent = text;
+  if (tag) { const s = document.createElement("span"); s.className = "tag"; s.textContent = tag; d.appendChild(s); }
+  $("log").appendChild(d);
+  $("log").scrollTop = $("log").scrollHeight;
+  return d;
+}
+
+function chips(list) {
+  const c = document.createElement("div"); c.className = "chips";
+  list.forEach((q) => { const b = document.createElement("button"); b.type = "button"; b.textContent = q; b.onclick = () => { c.remove(); handle(q); }; c.appendChild(b); });
+  $("log").appendChild(c);
+  $("log").scrollTop = $("log").scrollHeight;
+}
+
+function firstName(full) { return String(full || "").split(" ")[0]; }
+function fmtPct(n) { return Number(n || 0).toLocaleString("es-CO", { maximumFractionDigits: 1 }) + " %"; }
+
+function setStudent(s) {
+  student = s;
+  if (s) {
+    store.set("unab_sid", s.student_id);
+    $("who").hidden = false; $("whoname").textContent = s.full_name + " · " + s.student_id;
+    $("msg").placeholder = "Escribe tu pregunta…";
+  } else {
+    store.del("unab_sid");
+    $("who").hidden = true;
+    $("msg").placeholder = "Escribe tu ID de estudiante…";
+  }
+}
+
+function greet() {
+  bubble("¡Hola! 👋 Soy el asistente académico de la UNAB.\n\nPuedo ayudarte con el reglamento estudiantil, tus materias y tu avance, las noticias de la universidad y el calendario académico.\n\nPara empezar, escribe tu ID de estudiante (por ejemplo, U00000001).", "bot");
+}
+
+function welcome(s, again) {
+  const sem = s.current_semester ? s.current_semester + ".º semestre" : "sin materias en curso";
+  bubble((again ? "¡Hola de nuevo, " : "¡Listo, te encontré! Hola, ") + firstName(s.full_name) + ".\n\n" +
+         "• Programa: " + s.program + "\n• Semestre actual: " + sem + "\n• Avance en la carrera: " + fmtPct(s.progress_percentage) +
+         "\n\n¿En qué te puedo ayudar? (Las respuestas pueden tardar hasta 2 minutos.)", "bot");
+  chips(SUGGESTIONS);
+}
+
+async function lookup(id, silent) {
+  const { status, data } = await post("api/student", { student_id: id }, 20000);
+  if (status === 200 && data.student_id) return data;
+  if (!silent) {
+    if (status === 404) bubble("No encontré el ID " + id + " en la base de datos. Revísalo e inténtalo de nuevo.", "bot warn");
+    else bubble("No pude consultar la base de datos en este momento. Intenta de nuevo en un momento.", "bot warn");
+  }
+  return null;
+}
+
+async function handle(text) {
+  text = text.trim();
+  if (busy || !text) return;
+  busy = true; $("send").disabled = true;
+  bubble(text, "me");
+  const wait = bubble("", "bot typing");
+  try {
+    if (!student) {
+      const m = text.match(ID_RE);
+      if (!m) {
+        wait.remove();
+        bubble("Antes de responder necesito saber quién eres. Escribe tu ID de estudiante: es una U seguida de 8 dígitos, por ejemplo U00000001.", "bot");
+        return;
+      }
+      const s = await lookup(m[1].toUpperCase(), false);
+      wait.remove();
+      if (s) { setStudent(s); welcome(s, false); }
+      return;
+    }
+    if (/^(cambiar (id|estudiante)|salir|cerrar sesi[oó]n)$/i.test(text)) {
+      wait.remove(); setStudent(null);
+      bubble("Listo. Escribe el ID del estudiante con el que quieres continuar.", "bot");
+      return;
+    }
+    const started = Date.now();
+    const { status, data } = await post("api/chat", { student_id: student.student_id, message: text }, 240000);
+    wait.remove();
+    const secs = Math.round((Date.now() - started) / 1000);
+    if (status === 200 && data.response) bubble(data.response, "bot", (LABELS[data.intent] || "Respuesta") + " · " + secs + " s");
+    else if (status === 400) bubble(data.error || "Solo puedo ayudarte con temas académicos de la UNAB.", "bot warn");
+    else if (status === 401) { setStudent(null); bubble("No encontré tu ID en la base de datos. Escríbelo de nuevo.", "bot warn"); }
+    else bubble(data.error || ("No pude responder (código " + status + "). Intenta de nuevo."), "bot warn");
+  } catch (e) {
+    wait.remove();
+    bubble("Se agotó el tiempo de espera o falló la conexión. Intenta de nuevo.", "bot warn");
+  } finally { busy = false; $("send").disabled = false; $("msg").focus(); }
+}
+
+$("chatform").onsubmit = (e) => { e.preventDefault(); const v = $("msg").value; $("msg").value = ""; handle(v); };
+$("change").onclick = () => { setStudent(null); bubble("Escribe el ID del estudiante con el que quieres continuar.", "bot"); $("msg").focus(); };
+
+(async () => {
+  const saved = store.get("unab_sid");
+  if (saved) {
+    const s = await lookup(saved, true).catch(() => null);
+    if (s) { setStudent(s); welcome(s, true); $("msg").focus(); return; }
+  }
+  greet(); $("msg").focus();
+})();
+</script>
+</body>
+</html>

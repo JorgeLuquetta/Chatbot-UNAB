@@ -1,0 +1,20 @@
+import { Stack } from 'expo-router';
+import { StatusBar } from 'expo-status-bar';
+import { SafeAreaProvider } from 'react-native-safe-area-context';
+import { AuthProvider } from '../src/auth';
+import { useTheme } from '../src/theme';
+
+export default function RootLayout() {
+  const t = useTheme();
+  return (
+    <SafeAreaProvider>
+      <AuthProvider>
+        <StatusBar style="auto" />
+        <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: t.bg } }}>
+          <Stack.Screen name="(tabs)" />
+          <Stack.Screen name="login" />
+        </Stack>
+      </AuthProvider>
+    </SafeAreaProvider>
+  );
+}

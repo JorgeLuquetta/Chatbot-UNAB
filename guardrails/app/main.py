@@ -8,7 +8,10 @@ from fastapi import FastAPI
 from pydantic import BaseModel
 
 from .audit import AuditLogEntry, AuditSink, default_sink
-from .rules import FALLBACK_RESPONSE, check_input, check_output
+from .llm import LlmClassifier, default_classifier
+from .rules import FALLBACK_RESPONSE, Verdict, check_input, check_output
+
+_UNSET = object()
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 
@@ -33,10 +36,12 @@ class OutputResponse(BaseModel):
     sanitized_response: str
 
 
-def create_app(sink: AuditSink | None = None) -> FastAPI:
+def create_app(sink: AuditSink | None = None, classifier: LlmClassifier | None | object = _UNSET) -> FastAPI:
     @asynccontextmanager
     async def lifespan(app: FastAPI):
         app.state.audit = sink or default_sink()
+        # Por defecto el LLM solo se activa si GUARDRAILS_LLM_URL está definida (los tests no lo usan).
+        app.state.llm = default_classifier() if classifier is _UNSET else classifier
         yield
         close = getattr(app.state.audit, "close", None)
         if close:
@@ -51,6 +56,8 @@ def create_app(sink: AuditSink | None = None) -> FastAPI:
     @app.post("/validate-input", response_model=InputResponse)
     async def validate_input(req: InputRequest) -> InputResponse:
         verdict = check_input(req.message)
+        if verdict.allowed and app.state.llm is not None and await app.state.llm.is_attack(req.message):
+            verdict = Verdict(False, "input_injection", "LLM: posible manipulación del asistente")
         if not verdict.allowed:
             await app.state.audit.write(
                 AuditLogEntry.create(req.session_id, verdict.rejection_type, verdict.reason, req.message))
@@ -60,6 +67,8 @@ def create_app(sink: AuditSink | None = None) -> FastAPI:
     @app.post("/validate-output", response_model=OutputResponse)
     async def validate_output(req: OutputRequest) -> OutputResponse:
         verdict = check_output(req.response)
+        if verdict.allowed and app.state.llm is not None and await app.state.llm.is_off_topic(req.response):
+            verdict = Verdict(False, "output_scope", "LLM: respuesta fuera del ámbito académico")
         if not verdict.allowed:
             await app.state.audit.write(
                 AuditLogEntry.create(req.session_id, verdict.rejection_type, verdict.reason, req.response))

@@ -1,21 +1,21 @@
 {
-  "_comentario": "Fuentes de noticias UNAB. Ajusta los selectores CSS según el HTML real de cada página (inspecciona con F12).",
+  "_comentario": "Fuentes de noticias UNAB (sitio WordPress/Divi, verificado 2026-11-17). Cada noticia es un article.et_pb_post con h2.entry-title, span.published ('Nov 17, 2026') y .post-content-inner. Si el sitio cambia, inspecciona con F12 y ajusta los selectores.",
   "sources": [
     {
       "url": "https://www.unab.edu.co/noticias",
-      "item_selector": "article, .views-row, .noticia, .card",
-      "title_selector": "h2, h3, .title, .titulo",
-      "date_selector": "time, .date, .fecha, [class*=date]",
-      "summary_selector": "p, .summary, .resumen, .field--name-body",
-      "link_selector": "a[href]"
+      "item_selector": "article.et_pb_post",
+      "title_selector": "h2.entry-title",
+      "date_selector": "span.published",
+      "summary_selector": ".post-content-inner p, .post-content-inner",
+      "link_selector": "h2.entry-title a[href]"
     },
     {
-      "url": "https://www.unab.edu.co/eventos",
-      "item_selector": "article, .views-row, .evento, .card",
-      "title_selector": "h2, h3, .title, .titulo",
-      "date_selector": "time, .date, .fecha, [class*=date]",
-      "summary_selector": "p, .summary, .resumen",
-      "link_selector": "a[href]"
+      "url": "https://unab.edu.co/category/educacion-continua/",
+      "item_selector": "article.et_pb_post",
+      "title_selector": "h2.entry-title",
+      "date_selector": "span.published",
+      "summary_selector": ".post-content-inner p, .post-content-inner",
+      "link_selector": "h2.entry-title a[href]"
     }
   ]
 }

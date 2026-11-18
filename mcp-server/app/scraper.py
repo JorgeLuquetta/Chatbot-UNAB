@@ -50,6 +50,13 @@ def make_http_fetcher(timeout_s: float = 10.0) -> Fetcher:
 
 _MONTHS = {"enero": 1, "febrero": 2, "marzo": 3, "abril": 4, "mayo": 5, "junio": 6, "julio": 7,
            "agosto": 8, "septiembre": 9, "setiembre": 9, "octubre": 10, "noviembre": 11, "diciembre": 12}
+# Abreviaturas (3 letras) en español e inglés: el sitio WordPress de la UNAB publica "Nov 17, 2026"
+_MONTH_ABBR = {"ene": 1, "jan": 1, "feb": 2, "mar": 3, "abr": 4, "apr": 4, "may": 5, "jun": 6, "jul": 7,
+               "ago": 8, "aug": 8, "sep": 9, "set": 9, "oct": 10, "nov": 11, "dic": 12, "dec": 12}
+
+
+def _month(name: str) -> int | None:
+    return _MONTHS.get(name) or _MONTH_ABBR.get(name[:3])
 
 
 def _strip_accents(s: str) -> str:
@@ -82,10 +89,11 @@ def parse_date(text: str | None) -> datetime | None:
         if not m:
             return None
         mon, d, y = m.group(1), int(m.group(2)), int(m.group(3))
-    if mon not in _MONTHS:
+    mo = _month(mon)
+    if mo is None:
         return None
     try:
-        return datetime(y, _MONTHS[mon], d, tzinfo=timezone.utc)
+        return datetime(y, mo, d, tzinfo=timezone.utc)
     except ValueError:
         return None
 

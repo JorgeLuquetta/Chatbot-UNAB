@@ -11,7 +11,9 @@ const SYSTEM_BASE =
   'Responde SIEMPRE en español, de forma clara, breve y amable. ' +
   'Solo atiendes temas académicos e institucionales de la UNAB. ' +
   'Usa únicamente la información del contexto proporcionado; si no está, dilo con honestidad ' +
-  'y sugiere la dependencia de la UNAB a la que el estudiante puede acudir. No inventes datos.';
+  'y sugiere la dependencia de la UNAB a la que el estudiante puede acudir. No inventes datos. ' +
+  'Responde en máximo 5 frases, usando las mismas palabras del contexto (porcentajes, notas, artículos); ' +
+  'no agregues pasos, fórmulas ni ejemplos que no aparezcan en el contexto.';
 
 const CLASSIFIER_PROMPT =
   'Clasifica el mensaje del estudiante en exactamente una de estas etiquetas:\n' +
@@ -36,28 +38,63 @@ function normalizeIntent(raw) {
   return 'consulta-general'; // Requirement 3.6: fallback
 }
 
+// Ruteo por reglas ANTES del LLM: frases inequívocas se enrutan sin gastar una llamada al clasificador
+// (más rápido y determinista con un LLM pequeño en CPU). Devuelve null si hay duda → decide el LLM.
+const RULES = [
+  ['cursos-realizados', [
+    /\b(mi|mis)\s+(avance|progreso|cursos?|materias?|asignaturas?|notas?|calificaciones|historial|promedio|creditos)\b/,
+    /\bhe\s+(aprobado|cursado|visto|reprobado|perdido|ganado)\b/,
+    /\b(que|cuales|cuantas?|cuantos)\s+(cursos|materias|asignaturas|creditos)\s+(he|me\s+faltan?|tengo|llevo|debo)\b/,
+    /\bme\s+faltan?\s+(cursos|materias|asignaturas|creditos|semestres)\b/,
+  ]],
+  ['noticias', [/\b(noticias?|novedades|convocatorias?)\b/]],
+  ['consulta-general', [
+    /\b(reglamento|requisitos?|grado|graduarme|titulo|supletorios?|habilitaci\w*|reprob\w*|repruebo|sancion\w*|homologa\w*|transferencia|reintegro|insignia|competencias?)\b/,
+  ]],
+  ['calendario', [
+    /\b(fecha|fechas|calendario|cronograma)\b/,
+    /\bcuando\b.*\b(parcial(es)?|examen(es)?|finales|matriculas?|inscripcion(es)?|clases|semestre|vacaciones|festivos?|cancelar|entrega)\b/,
+  ]],
+];
+
+function ruleIntent(message) {
+  const text = stripAccents(String(message || '')).toLowerCase();
+  const hits = RULES.filter(([, patterns]) => patterns.some((p) => p.test(text))).map(([label]) => label);
+  return hits.length === 1 ? hits[0] : null; // ambiguo (0 o 2+ coincidencias) → LLM
+}
+
 function bearerToken(headers) {
   const h = headers || {};
   const auth = String(h.authorization || h.Authorization || '').trim();
   return /^bearer\s+/i.test(auth) ? auth.replace(/^bearer\s+/i, '').trim() : '';
 }
 
-function historyMessages(history) {
+// Recorta textos largos para que el prompt quepa y sea rápido en un LLM local (Ollama en CPU).
+function clip(text, max) {
+  const s = String(text == null ? '' : text);
+  return s.length > max ? s.slice(0, max).trimEnd() + '…' : s;
+}
+
+const HISTORY_CHARS = 300;
+
+// maxMessages: 20 = 10 intercambios (Property 16). Con un LLM local se puede bajar con LLM_HISTORY_MESSAGES.
+function historyMessages(history, maxMessages) {
+  const max = Number.isInteger(maxMessages) && maxMessages >= 0 ? Math.min(maxMessages, 20) : 20;
   let h = history;
   if (typeof h === 'string') {
     try { h = JSON.parse(h); } catch (e) { h = []; }
   }
-  if (!Array.isArray(h)) return [];
+  if (!Array.isArray(h) || max === 0) return [];
   return h
     .filter((m) => m && (m.role === 'user' || m.role === 'assistant') && typeof m.content === 'string')
-    .slice(-20) // Property 16: máximo 10 intercambios
-    .map((m) => ({ role: m.role, content: m.content }));
+    .slice(-max) // Property 16: máximo 10 intercambios
+    .map((m) => ({ role: m.role, content: clip(m.content, HISTORY_CHARS) }));
 }
 
-function buildMessages(systemExtra, history, message) {
+function buildMessages(systemExtra, history, message, maxMessages) {
   return [
     { role: 'system', content: SYSTEM_BASE + '\n\n' + systemExtra },
-    ...historyMessages(history),
+    ...historyMessages(history, maxMessages),
     { role: 'user', content: String(message || '') },
   ];
 }
@@ -73,7 +110,7 @@ function ragContext(chunks) {
     return 'CONTEXTO: (no se encontraron fragmentos relevantes en los documentos institucionales)';
   }
   return 'CONTEXTO (fragmentos de documentos oficiales CCD de la UNAB):\n' +
-    chunks.map((c, i) => `[${i + 1}] (${c.document_name}) ${c.text}`).join('\n\n');
+    chunks.map((c, i) => `[${i + 1}] (${c.document_name}) ${clip(c.text, 700)}`).join('\n\n');
 }
 
 // Acepta encabezados en inglés o español en la hoja de Google Sheets.
@@ -115,10 +152,11 @@ function coursesContext(record) {
 }
 
 function newsContext(news) {
-  const items = Array.isArray(news) ? news : [];
+  const items = (Array.isArray(news) ? news : []).slice(0, 8);
   return 'NOTICIAS RECIENTES DE LA UNAB (más recientes primero):\n' +
-    items.map((n) => `- [${String(n.published_at).slice(0, 10)}] ${n.title}: ${n.summary} (${n.source_url})`).join('\n') +
-    '\nResume solo las noticias relacionadas con la pregunta; si ninguna aplica, menciona las más recientes.';
+    items.map((n) => `- [${String(n.published_at).slice(0, 10)}] ${n.title}: ${clip(n.summary, 200)} (${n.source_url})`).join('\n') +
+    '\nResponde con las noticias de esta lista (título y fecha). Si la pregunta es general, presenta las 3 más ' +
+    'recientes; si pregunta por un tema, las relacionadas con ese tema. No digas que no hay noticias.';
 }
 
 function parseEventDate(value) {
@@ -151,7 +189,7 @@ function llmText(resp) {
 // @export
 if (typeof module !== 'undefined') {
   module.exports = {
-    INTENT_LABELS, FALLBACK_RESPONSE, CLASSIFIER_PROMPT, normalizeIntent, bearerToken, historyMessages,
+    INTENT_LABELS, FALLBACK_RESPONSE, CLASSIFIER_PROMPT, normalizeIntent, ruleIntent, bearerToken, historyMessages, clip,
     buildMessages, ragContext, calendarEvents, calendarContext, coursesContext, newsContext,
     eventsInWindow, parseEventDate, llmText, normalizeEvent,
   };

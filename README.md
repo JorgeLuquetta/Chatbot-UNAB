@@ -25,7 +25,8 @@ App Android ──HTTPS──► n8n :9000 ──► Guardrails (entrada) ──
 | `guardrails/` | Microservicio FastAPI: `/validate-input` (prompt injection), `/validate-output` (alcance) + auditoría |
 | `n8n/workflows/*.json` | 6 workflows importables (chat con ruteo, login, ruta académica, calendario, registro FCM, push) |
 | `n8n/code/lib.js`, `n8n/build_workflows.py` | Lógica JS de los nodos Code (probada) y generador de los JSON |
-| `android/` | App Android (Kotlin, Retrofit, Room, EncryptedSharedPreferences, FCM) |
+| `mobile/` | **App móvil Expo / React Native** (se ejecuta en Expo Go): login, chat, ruta académica, calendario offline, recordatorios |
+| `android/` | App Android nativa original (Kotlin, Retrofit, Room, FCM); requiere Android Studio |
 | `tests/` | Pruebas de integración (SQL real, lógica JS de n8n) y smoke test e2e |
 | `scripts/` | `setup_n8n.py` (credenciales + import), `run_tests.sh`, `mock_llm.py` |
 | `docs/` | Requisitos, diseño y plan de tareas (con estado), calendario de ejemplo |
@@ -56,9 +57,10 @@ Usuarios de prueba del seed: `U00000001` / `Unab2026*` (6.º semestre) y `U00000
 sudo apt update && sudo apt install -y docker.io docker-compose-v2 python3
 git clone <tu-repo> chatbot && cd chatbot
 cp .env.example .env && nano .env              # completa los valores
-docker compose up -d --build
-python3 scripts/setup_n8n.py --activate        # crea credenciales cifradas e importa/activa los workflows
+docker compose up -d --build                   # incluye Ollama y descarga los modelos (~1.6 GB) la primera vez
+python3 scripts/setup_n8n.py --activate        # crea credenciales cifradas, importa y activa los workflows
 ```
+- VM mínima: 2 vCPU y 4 GB de RAM (p. ej. Azure `Standard_B2als_v2` o AWS `t3.medium`).
 - En el Security Group abre solo **9000/TCP** (y 22 para tu IP). 8000 y 8080 no se publican.
 - Entra a `http://<ip-ec2>:9000`, crea el usuario dueño de n8n y verifica que los 6 workflows estén activos.
 - Ingesta de documentos CCD: copia los PDF/DOCX a `data/ccd/` y ejecuta
@@ -70,17 +72,23 @@ python3 scripts/setup_n8n.py --activate        # crea credenciales cifradas e im
 > **HTTPS:** n8n en el puerto 9000 sirve HTTP. Para producción coloca Caddy o Nginx con certificado delante de n8n.
 > La App en modo *debug* permite HTTP; en *release* solo HTTPS.
 
-### 5. App Android
-1. Abre la carpeta `android/` en Android Studio (Ladybug o superior, JDK 17).
-2. En `android/gradle.properties` cambia `chatbot.baseUrl` (emulador + backend local: `http://10.0.2.2:9000/`;
-   EC2: `http://<ip-ec2>:9000/`).
-3. Ejecuta la app. Pruebas: `./gradlew test` (unitarias + Kotest) y `./gradlew connectedAndroidTest` (Espresso).
+### 5. App móvil (Expo Go)
+La app principal está en `mobile/` (Expo / React Native) y se ejecuta en **Expo Go** sin Android Studio:
+```bash
+cd mobile && npm install && npx expo start     # escanea el QR con Expo Go
+```
+Ver `mobile/README.md`. La app Kotlin original sigue en `android/` como referencia (requiere Android Studio).
 
-### Desarrollo local sin costos de API
-- `EMBEDDINGS_PROVIDER=hash` en el mcp-server usa embeddings deterministas sin OpenAI (no semánticos).
-- `python3 scripts/mock_llm.py` levanta un LLM simulado compatible con OpenAI en el puerto 8099; apúntale con
-  `LLM_API_URL=http://<host>:8099/v1/chat/completions`.
-- Para usar otro proveedor compatible con OpenAI (o un proxy hacia Claude) cambia `LLM_API_URL` y `LLM_MODEL`.
+### LLM gratuito con Ollama (por defecto)
+`docker compose up` levanta **Ollama** y descarga `qwen2.5:1.5b` (chat, clasificación y validación) y
+`granite-embedding:278m` (embeddings multilingües, 768 dims rellenados a 1536 en la columna `vector(1536)`;
+el relleno con ceros no cambia la similitud coseno). No hace falta ninguna cuenta ni API key.
+- Requiere ~4 GB de RAM. En CPU una respuesta tarda de 30 a 90 s; Ollama atiende una consulta a la vez.
+- Los guardrails aplican primero las reglas y luego el LLM (`GUARDRAILS_LLM_URL`). Si Ollama falla, quedan las reglas.
+- Para acelerar: menos historial (`LLM_HISTORY_MESSAGES`), respuestas más cortas (`LLM_MAX_TOKENS`) o más vCPU.
+- Para usar OpenAI u otro proveedor compatible: cambia `LLM_API_URL`, `LLM_MODEL`, `OPENAI_API_KEY` y
+  `EMBEDDINGS_PROVIDER=openai` (y vuelve a ingerir los documentos).
+- Pruebas sin LLM: `EMBEDDINGS_PROVIDER=hash` y `python3 scripts/mock_llm.py` (`LLM_API_URL=http://<host>:8099/v1/chat/completions`).
 
 ## Endpoints (n8n)
 

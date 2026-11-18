@@ -172,6 +172,35 @@ LANGUAGE sql STABLE AS $$
        AND ss.expires_at > now();
 $$;
 
+-- Chat sin login (demo): busca al estudiante solo por su ID y devuelve su sesión
+-- estable y un resumen (programa, semestre actual, avance). Si nunca inició sesión,
+-- crea su fila de sesión con un token inutilizable (ya expirado).
+DROP FUNCTION IF EXISTS session_by_student(TEXT);
+CREATE OR REPLACE FUNCTION session_by_student(p_student_id TEXT)
+RETURNS TABLE (session_id TEXT, student_id TEXT, full_name TEXT, program TEXT,
+               current_semester INT, progress_percentage NUMERIC)
+LANGUAGE plpgsql AS $$
+DECLARE
+    v_id TEXT := upper(btrim(COALESCE(p_student_id, '')));
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM students s WHERE s.student_id = v_id) THEN
+        RETURN;  -- sin filas = ID no encontrado
+    END IF;
+    INSERT INTO student_sessions (session_id, student_id, token_hash, expires_at)
+    VALUES ('sess_' || encode(gen_random_bytes(12), 'hex'), v_id,
+            encode(gen_random_bytes(32), 'hex'), now())
+    ON CONFLICT ON CONSTRAINT student_sessions_student_id_key DO NOTHING;
+    RETURN QUERY
+        SELECT ss.session_id, s.student_id, s.full_name, s.program,
+               (SELECT max(c.semester) FROM student_courses c
+                 WHERE c.student_session = ss.session_id AND c.status = 'in_progress')::INT,
+               (SELECT COALESCE(round(100.0 * count(*) FILTER (WHERE c.status = 'completed') / NULLIF(count(*), 0), 1), 0)
+                  FROM student_courses c WHERE c.student_session = ss.session_id)
+          FROM students s JOIN student_sessions ss ON ss.student_id = s.student_id
+         WHERE s.student_id = v_id;
+END;
+$$;
+
 -- @section audit
 -- Log de auditoría de guardrails
 CREATE TABLE IF NOT EXISTS guardrails_audit_log (

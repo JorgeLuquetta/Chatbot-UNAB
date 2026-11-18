@@ -52,6 +52,34 @@ def test_property_5_always_valid_label(raws):
     assert all(r in LABELS for r in results)
 
 
+def test_rule_intent_examples():
+    cases = {
+        "¿Cuál es mi avance en la carrera?": "cursos-realizados",
+        "¿Qué cursos he aprobado?": "cursos-realizados",
+        "Muéstrame mis notas": "cursos-realizados",
+        "¿Cuántas materias me faltan?": "cursos-realizados",
+        "¿Qué noticias hay en la universidad?": "noticias",
+        "¿Hay convocatorias abiertas?": "noticias",
+        "¿Cuándo son los parciales?": "calendario",
+        "¿Cuál es la fecha de matrícula?": "calendario",
+        "¿Cuáles son los requisitos de grado?": "consulta-general",
+        "¿Cómo se calcula la nota de un examen supletorio?": "consulta-general",
+        "¿Qué pasa si repruebo una materia tres veces?": "consulta-general",
+        # Sin coincidencia clara → null (decide el LLM)
+        "¿Qué es el bienestar universitario?": None,
+        "hola": None,
+        "¿Cuántos créditos me faltan para el grado?": None,  # cursos + grado → ambiguo
+        # Dos intenciones a la vez → null
+        "¿Qué noticias hay sobre la fecha de matrícula?": None,
+    }
+    assert jsbatch("ruleIntent", list(cases)) == list(cases.values())
+
+
+@given(st.text())
+def test_rule_intent_is_label_or_null(text):
+    assert jsbatch("ruleIntent", [text])[0] in LABELS | {None}
+
+
 def test_normalize_intent_examples():
     vals = ["calendario", "Calendario.", '"noticias"', "cursos realizados", "Etiqueta: cursos-realizados",
             "no sé", "", "calendario o noticias"]

@@ -1,0 +1,26 @@
+# Override SOLO para la VM mientras no haya Supabase: PostgreSQL+pgvector local (servicio "db").
+# Cuando SUPABASE_DB_URL apunte a Supabase, borra este archivo.
+services:
+  db:
+    image: pgvector/pgvector:pg16
+    restart: always
+    environment:
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - POSTGRES_DB=chatbot
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+      - ./db/schema.sql:/docker-entrypoint-initdb.d/01_schema.sql:ro
+      - ./db/seed.sql:/docker-entrypoint-initdb.d/02_seed.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d chatbot"]
+      interval: 5s
+      retries: 20
+    networks: [backend]
+  mcp-server:
+    depends_on:
+      db: {condition: service_healthy}
+  guardrails:
+    depends_on:
+      db: {condition: service_healthy}
+volumes:
+  pg_data:

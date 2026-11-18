@@ -4,7 +4,7 @@ from __future__ import annotations
 import os
 
 from .db import get_pool
-from .embeddings import Embedder, HashEmbedder, OpenAIEmbedder
+from .embeddings import Embedder, HashEmbedder, OllamaEmbedder, OpenAIEmbedder
 from .stores import (CourseStore, DocumentStore, NewsStore, PgCourseStore, PgDocumentStore,
                      PgNewsStore)
 
@@ -18,11 +18,14 @@ class Services:
 
     def embedder(self) -> Embedder:
         if self._embedder is None:
-            # EMBEDDINGS_PROVIDER=hash permite desarrollo local sin API key (no semántico).
-            if os.getenv("EMBEDDINGS_PROVIDER", "openai").lower() == "hash":
+            # EMBEDDINGS_PROVIDER: ollama (local, gratis), openai, o hash (tests; no semántico).
+            provider = os.getenv("EMBEDDINGS_PROVIDER", "ollama").lower()
+            if provider == "hash":
                 self._embedder = HashEmbedder()
-            else:
+            elif provider == "openai":
                 self._embedder = OpenAIEmbedder()
+            else:
+                self._embedder = OllamaEmbedder()
         return self._embedder
 
     async def document_store(self) -> DocumentStore:

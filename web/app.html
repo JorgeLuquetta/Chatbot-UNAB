@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>App Chatbot UNAB</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+<style>
+  :root { --bg: #f4f5f7; --panel: #ffffff; --text: #1d2330; --muted: #6b7385; --line: #e2e5ea; --brand: #c8102e; --ok: #067647; }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #12141a; --panel: #1b1e26; --text: #e7e9ee; --muted: #9aa1b1; --line: #2b2f3a; --brand: #e0384f; --ok: #6ce9a6; }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 16px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  main { max-width: 900px; margin: 0 auto; padding: 32px 16px; }
+  h1 { font-size: 26px; margin: 0 0 4px; }
+  .sub { color: var(--muted); margin: 0 0 28px; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px; }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 16px; padding: 22px; display: flex; flex-direction: column; align-items: center; text-align: center; }
+  .card h2 { font-size: 18px; margin: 0 0 4px; }
+  .card p { color: var(--muted); font-size: 14px; margin: 0 0 16px; }
+  .qr { background: #fff; padding: 14px; border-radius: 12px; width: 248px; height: 248px; display: grid; place-items: center; }
+  .qr img, .qr canvas { display: block; }
+  .url { margin-top: 12px; font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 13px; word-break: break-all; }
+  .url a { color: var(--brand); }
+  .pending { width: 248px; height: 248px; border: 2px dashed var(--line); border-radius: 12px; display: grid; place-items: center; color: var(--muted); font-size: 14px; padding: 20px; }
+  ol { text-align: left; font-size: 14px; color: var(--muted); padding-left: 20px; margin: 16px 0 0; }
+  .status { font-size: 13px; margin-top: 10px; }
+  .status.ok { color: var(--ok); }
+</style>
+</head>
+<body>
+<main>
+  <h1>Chatbot UNAB en tu celular</h1>
+  <p class="sub">Escanea un código con la cámara del celular.</p>
+  <div class="grid">
+    <section class="card">
+      <h2>Chat web</h2>
+      <p>Se abre en el navegador del celular. No hay que instalar nada.</p>
+      <div class="qr" id="qr-web"></div>
+      <div class="url"><a id="url-web" href="#"></a></div>
+      <div class="status" id="st-web"></div>
+    </section>
+    <section class="card">
+      <h2>App móvil (Expo Go)</h2>
+      <p>La app nativa del proyecto. Requiere Expo Go instalado.</p>
+      <div id="qr-expo-box"><div class="pending" id="expo-pending">El servidor de Expo no está corriendo en este momento.</div></div>
+      <div class="url" id="url-expo"></div>
+      <ol>
+        <li>Instala <strong>Expo Go</strong> desde Play Store o App Store.</li>
+        <li>Abre Expo Go y toca <strong>Scan QR code</strong>. En iPhone, usa la cámara.</li>
+        <li>Entra con tu ID de estudiante.</li>
+      </ol>
+    </section>
+  </div>
+</main>
+<script>
+const CHAT_URL = "https://chat.traumado.top";
+function drawQR(el, text) {
+  el.innerHTML = "";
+  new QRCode(el, { text, width: 220, height: 220, colorDark: "#1d2330", colorLight: "#ffffff", correctLevel: QRCode.CorrectLevel.M });
+}
+drawQR(document.getElementById("qr-web"), CHAT_URL);
+const a = document.getElementById("url-web"); a.href = CHAT_URL; a.textContent = CHAT_URL;
+
+// Si el servidor de Expo está corriendo, muestra su QR (exps:// = Expo Go por HTTPS a través del túnel)
+const EXPO_URL = "exps://expo.traumado.top";
+function checkExpo() {
+  fetch("expo-status", { cache: "no-store" }).then((r) => r.ok ? r.text() : "").then((txt) => {
+    const box = document.getElementById("qr-expo-box");
+    const url = document.getElementById("url-expo");
+    if (txt.includes("running")) {
+      if (!document.getElementById("qr-expo")) {
+        box.innerHTML = '<div class="qr" id="qr-expo"></div>';
+        drawQR(document.getElementById("qr-expo"), EXPO_URL);
+        url.textContent = EXPO_URL;
+      }
+    } else {
+      box.innerHTML = '<div class="pending">El servidor de la app está arrancando o detenido. Esta página se actualiza sola.</div>';
+      url.textContent = "";
+    }
+  }).catch(() => {});
+}
+checkExpo();
+setInterval(checkExpo, 15000);
+</script>
+</body>
+</html>

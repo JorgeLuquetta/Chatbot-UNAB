@@ -29,9 +29,9 @@ services:
       # Cualquier endpoint compatible con OpenAI Chat Completions (por defecto Ollama local)
       - LLM_MODEL=${LLM_MODEL:-qwen2.5:1.5b}
       - LLM_API_URL=${LLM_API_URL:-http://ollama:11434/v1/chat/completions}
-      # Ajustes de velocidad para un LLM en CPU: historial enviado al LLM y largo máximo de la respuesta
+      # Ajustes para un LLM en CPU; límites bajos de respuesta pueden truncar frases.
       - LLM_HISTORY_MESSAGES=${LLM_HISTORY_MESSAGES:-2}
-      - LLM_MAX_TOKENS=${LLM_MAX_TOKENS:-130}
+      - LLM_MAX_TOKENS=${LLM_MAX_TOKENS:-700}
       # Fragmentos del reglamento que recibe el LLM (antes 5)
       - RAG_TOP_K=${RAG_TOP_K:-3}
       - N8N_RUNNERS_ENABLED=true

@@ -15,7 +15,7 @@ log = logging.getLogger("guardrails.audit")
 @dataclass
 class AuditLogEntry:
     session_id: str
-    rejection_type: str          # input_injection | input_invalid | output_scope | output_prohibited
+    rejection_type: str          # input_injection | input_invalid | input_scope | output_scope | output_prohibited
     rejection_reason: str
     raw_content_hash: str        # SHA-256 del contenido (nunca el contenido en claro)
     id: uuid.UUID = field(default_factory=uuid.uuid4)

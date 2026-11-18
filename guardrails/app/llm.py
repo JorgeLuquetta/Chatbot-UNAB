@@ -29,6 +29,23 @@ OUTPUT_PROMPT = (
     "orientación académica). Responde solo una palabra: ACADEMICO o FUERA."
 )
 
+# Tema de la PREGUNTA (corta = ~1 s en CPU). Más fiable que juzgar la respuesta ya generada.
+TOPIC_PROMPT = (
+    "Clasifica la PREGUNTA que un estudiante le hace al asistente académico de la universidad UNAB.\n"
+    "ACADEMICO: reglamento, materias, notas, avance, créditos, matrícula, grado, calendario, trámites, becas, "
+    "bienestar, noticias o servicios de la universidad, o un saludo.\n"
+    "FUERA: cualquier otro tema (cocina, deportes, política, farándula, chistes, cultura general, programación "
+    "general, salud, tareas de otras cosas, etc.).\n"
+    "Ejemplos:\nPREGUNTA: ¿Cuándo empiezan los parciales? -> ACADEMICO\nPREGUNTA: Dame una receta de arepas -> FUERA\n"
+    "PREGUNTA: ¿Qué materias me faltan? -> ACADEMICO\nPREGUNTA: ¿Quién ganó el mundial? -> FUERA\n"
+    "Responde solo una palabra: ACADEMICO o FUERA."
+)
+
+
+def topic_check_enabled(mode: str = "on") -> bool:
+    """GUARDRAILS_LLM_TOPIC: "on" (por defecto) revisa el tema de cada pregunta con el LLM; "off" no."""
+    return (mode or "on").strip().lower() != "off"
+
 
 # Cuándo consultar al LLM en la ENTRADA (GUARDRAILS_LLM_INPUT):
 #   "suspicious" (por defecto): solo si el mensaje tiene señales de manipulación o es muy largo.
@@ -36,10 +53,13 @@ OUTPUT_PROMPT = (
 #   "always":     en todos los mensajes.   "off": nunca (solo reglas).
 # La SALIDA siempre se revisa con el LLM si está activado.
 SUSPICIOUS_MARKERS = (
-    "instruc", "ignor", "olvid", "rol", "actua", "actúa", "finge", "fingir", "simula", "personaje", "eres ahora",
-    "a partir de ahora", "desde ahora", "sistema", "system", "prompt", "regla", "restric", "sin filtro", "jailbreak",
-    "developer", "desarrollador", "modo ", "revela", "clave", "contraseña", "password", "token", "secreto",
-    "admin", "root", "sql", "<", "{", "```", "anterior", "previo",
+    # Señales de manipulación. Se evitan palabras que aparecen en preguntas académicas normales
+    # ("desarrollo", "Administración", "Ingeniería de Sistemas", "semestre anterior", "regla de...").
+    "instruc", "ignor", "olvid", "tu rol", "el rol", "un rol", "rol de", "actua", "actúa", "finge", "fingir",
+    "simula", "personaje", "eres ahora", "ahora eres", "a partir de ahora", "desde ahora",
+    "del sistema", "system", "prompt", "las reglas", "tus reglas", "restric", "sin filtro", "jailbreak",
+    "developer", "desarrollador", "modo dios", "modo desarrollador", "revela", "clave", "contraseña",
+    "password", "token", "secreto", "administrador", "root", "sql", "<", "{", "```",
 )
 SUSPICIOUS_LENGTH = 280
 
@@ -57,6 +77,7 @@ def needs_llm_input_check(message: str, mode: str = "suspicious") -> bool:
 class LlmClassifier(Protocol):
     async def is_attack(self, message: str) -> bool | None: ...
     async def is_off_topic(self, response: str) -> bool | None: ...
+    async def is_off_topic_question(self, message: str) -> bool | None: ...
 
 
 Chat = Callable[[str, str], Awaitable[str]]
@@ -83,9 +104,18 @@ class OllamaClassifier:
             return True
         return False if "SEGURO" in answer else None
 
+    async def is_off_topic_question(self, message: str) -> bool | None:
+        answer = await self._ask(TOPIC_PROMPT, "PREGUNTA: " + message[:400])
+        if answer is None:
+            return None
+        answer = answer.replace("É", "E")
+        if "FUERA" in answer:
+            return True
+        return False if "ACADEMICO" in answer else None
+
     async def is_off_topic(self, response: str) -> bool | None:
         # Basta el inicio de la respuesta para juzgar el tema (prompt más corto = más rápido en CPU)
-        answer = await self._ask(OUTPUT_PROMPT, "RESPUESTA: " + response[:700])
+        answer = await self._ask(OUTPUT_PROMPT, "RESPUESTA: " + response[:400])
         if answer is None:
             return None
         answer = answer.replace("É", "E")

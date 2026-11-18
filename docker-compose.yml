@@ -27,7 +27,7 @@ services:
       - GOOGLE_SHEET_NAME=${GOOGLE_SHEET_NAME:-Calendario Académico}
       - FCM_PROJECT_ID=${FCM_PROJECT_ID}
       # Cualquier endpoint compatible con OpenAI Chat Completions (por defecto Ollama local)
-      - LLM_MODEL=${LLM_MODEL:-qwen2.5:1.5b}
+      - LLM_MODEL=${LLM_MODEL:-unab-llm}
       - LLM_API_URL=${LLM_API_URL:-http://ollama:11434/v1/chat/completions}
       # Ajustes de velocidad para un LLM en CPU: historial enviado al LLM y largo máximo de la respuesta
       - LLM_HISTORY_MESSAGES=${LLM_HISTORY_MESSAGES:-2}
@@ -81,9 +81,10 @@ services:
       - DB_SSL=${DB_SSL:-require}
       # Segunda capa de validación con LLM (vacío = solo reglas)
       - GUARDRAILS_LLM_URL=${GUARDRAILS_LLM_URL-http://ollama:11434}
-      - GUARDRAILS_LLM_MODEL=${GUARDRAILS_LLM_MODEL:-qwen2.5:1.5b}
+      - GUARDRAILS_LLM_MODEL=${GUARDRAILS_LLM_MODEL:-unab-llm}
       # suspicious = el LLM revisa la entrada solo si hay señales de manipulación (always | off)
       - GUARDRAILS_LLM_INPUT=${GUARDRAILS_LLM_INPUT:-suspicious}
+      - GUARDRAILS_LLM_TOPIC=${GUARDRAILS_LLM_TOPIC:-on}   # revisa el tema de cada pregunta (~1 s)
     expose:
       - "8080"
     networks:
@@ -109,6 +110,7 @@ services:
       - backend
 
   # Descarga los modelos la primera vez (luego termina). Idempotente.
+  # Crea "unab-llm" = qwen2.5:1.5b usando todos los hilos de la CPU (Ollama usa solo los núcleos físicos).
   ollama-pull:
     image: ollama/ollama:0.12.6
     restart: "no"
@@ -116,7 +118,7 @@ services:
       - OLLAMA_HOST=ollama:11434
     entrypoint: ["/bin/sh", "-c"]
     command:
-      - "sleep 3 && ollama pull ${LLM_MODEL:-qwen2.5:1.5b} && ollama pull ${OLLAMA_EMBED_MODEL:-granite-embedding:278m} && echo MODELOS_LISTOS"
+      - "sleep 3 && ollama pull ${LLM_BASE_MODEL:-qwen2.5:1.5b} && ollama pull ${OLLAMA_EMBED_MODEL:-granite-embedding:278m} && printf 'FROM ${LLM_BASE_MODEL:-qwen2.5:1.5b}\nPARAMETER num_thread ${LLM_NUM_THREAD:-2}\n' > /tmp/Modelfile && ollama create unab-llm -f /tmp/Modelfile && echo MODELOS_LISTOS"
     networks:
       - backend
     depends_on:

@@ -22,7 +22,7 @@ La VM de Azure publica todo por un túnel de Cloudflare con HTTPS. No hace falta
 | Dirección | Qué es | Puerto en la VM |
 |---|---|---|
 | **https://chat.traumado.top** | Chat web para estudiantes: saluda, pide el ID y responde | `localhost:9001` |
-| **https://app.traumado.top** | Página con los QR: chat web y app en Expo Go | `localhost:9002` |
+| **https://app.traumado.top** | Página con los QR: chat web y app en Expo Go. También en https://chat.traumado.top/app | `localhost:9002` |
 | **https://expo.traumado.top** | Servidor de la app para Expo Go (`exps://expo.traumado.top`). En un navegador redirige a app.traumado.top | `localhost:8081` |
 | **https://chatbot.traumado.top** | n8n: interfaz de administración y webhooks (`/webhook/...`) | `localhost:9000` |
 
@@ -56,7 +56,7 @@ Para el endpoint `/webhook/login` la contraseña de todos es `Unab2026*`.
    - *¿Cuáles son los requisitos de grado?* (RAG sobre el reglamento)
    - *¿Qué noticias hay en la universidad?* (noticias)
    - *Recomiéndame un casino* → se bloquea porque no es un tema académico (guardrails)
-2. **App móvil:** instala Expo Go, abre https://app.traumado.top en el PC y escanea el QR de la app.
+2. **App móvil:** instala Expo Go, abre https://app.traumado.top (o https://chat.traumado.top/app) en el PC y escanea el QR de la app.
 3. **API directa:**
    ```bash
    curl -X POST https://chatbot.traumado.top/webhook/student-lookup \

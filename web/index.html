@@ -130,7 +130,7 @@ function welcome(s, again) {
   const sem = s.current_semester ? s.current_semester + ".º semestre" : "sin materias en curso";
   bubble((again ? "¡Hola de nuevo, " : "¡Listo, te encontré! Hola, ") + firstName(s.full_name) + ".\n\n" +
          "• Programa: " + s.program + "\n• Semestre actual: " + sem + "\n• Avance en la carrera: " + fmtPct(s.progress_percentage) +
-         "\n\n¿En qué te puedo ayudar? (Las respuestas pueden tardar hasta 2 minutos.)", "bot");
+         "\n\n¿En qué te puedo ayudar? (Cada respuesta tarda alrededor de 1 minuto.)", "bot");
   chips(SUGGESTIONS);
 }
 
@@ -175,6 +175,8 @@ async function handle(text) {
     if (status === 200 && data.response) bubble(data.response, "bot", (LABELS[data.intent] || "Respuesta") + " · " + secs + " s");
     else if (status === 400) bubble(data.error || "Solo puedo ayudarte con temas académicos de la UNAB.", "bot warn");
     else if (status === 401) { setStudent(null); bubble("No encontré tu ID en la base de datos. Escríbelo de nuevo.", "bot warn"); }
+    else if ([502, 503, 504, 522, 524].includes(status)) bubble("El asistente está ocupado o tardó demasiado en responder (puede estar atendiendo otra pregunta). Espera unos segundos y vuelve a intentarlo.", "bot warn");
+    else if (status === 404) bubble("El asistente se está reiniciando. Intenta de nuevo en un minuto.", "bot warn");
     else bubble(data.error || ("No pude responder (código " + status + "). Intenta de nuevo."), "bot warn");
   } catch (e) {
     wait.remove();

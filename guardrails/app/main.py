@@ -10,7 +10,7 @@ from pydantic import BaseModel
 from .audit import AuditLogEntry, AuditSink, default_sink
 import os
 
-from .llm import LlmClassifier, default_classifier, needs_llm_input_check
+from .llm import LlmClassifier, default_classifier, needs_llm_input_check, topic_check_enabled
 from .rules import FALLBACK_RESPONSE, Verdict, check_input, check_output
 
 _UNSET = object()
@@ -62,6 +62,10 @@ def create_app(sink: AuditSink | None = None, classifier: LlmClassifier | None |
         if (verdict.allowed and app.state.llm is not None and needs_llm_input_check(req.message, mode)
                 and await app.state.llm.is_attack(req.message)):
             verdict = Verdict(False, "input_injection", "LLM: posible manipulación del asistente")
+        if (verdict.allowed and app.state.llm is not None
+                and topic_check_enabled(os.getenv("GUARDRAILS_LLM_TOPIC", "on"))
+                and await app.state.llm.is_off_topic_question(req.message)):
+            verdict = Verdict(False, "input_scope", "LLM: pregunta fuera del ámbito académico")
         if not verdict.allowed:
             await app.state.audit.write(
                 AuditLogEntry.create(req.session_id, verdict.rejection_type, verdict.reason, req.message))

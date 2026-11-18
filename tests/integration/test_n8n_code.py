@@ -128,3 +128,9 @@ def test_bearer_token():
     assert js("bearerToken", {"authorization": "Bearer abc123"}) == "abc123"
     assert js("bearerToken", {"authorization": "Basic x"}) == ""
     assert js("bearerToken", None) == ""
+
+
+def test_chat_response_has_a_hard_token_limit():
+    workflow = json.loads((ROOT / "n8n" / "workflows" / "01_chat_ruteo.json").read_text(encoding="utf-8"))
+    node = next(n for n in workflow["nodes"] if n["name"] == "Generar respuesta (LLM)")
+    assert "Math.min(80, parseInt($env.LLM_MAX_TOKENS, 10) || 80)" in node["parameters"]["jsonBody"]

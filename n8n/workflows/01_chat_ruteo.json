@@ -632,7 +632,7 @@
         "url": "={{ $env.LLM_API_URL || 'http://ollama:11434/v1/chat/completions' }}",
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify({ model: $env.LLM_MODEL || 'qwen2.5:1.5b', messages: $json.messages, temperature: 0.1, max_tokens: Math.min(700, parseInt($env.LLM_MAX_TOKENS, 10) || 700) }) }}",
+        "jsonBody": "={{ JSON.stringify({ model: $env.LLM_MODEL || 'qwen2.5:1.5b', messages: $json.messages, temperature: 0.1, max_tokens: Math.min(80, parseInt($env.LLM_MAX_TOKENS, 10) || 80) }) }}",
         "options": {
           "timeout": 180000
         },

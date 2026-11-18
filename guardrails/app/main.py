@@ -8,7 +8,9 @@ from fastapi import FastAPI
 from pydantic import BaseModel
 
 from .audit import AuditLogEntry, AuditSink, default_sink
-from .llm import LlmClassifier, default_classifier
+import os
+
+from .llm import LlmClassifier, default_classifier, needs_llm_input_check
 from .rules import FALLBACK_RESPONSE, Verdict, check_input, check_output
 
 _UNSET = object()
@@ -56,7 +58,9 @@ def create_app(sink: AuditSink | None = None, classifier: LlmClassifier | None |
     @app.post("/validate-input", response_model=InputResponse)
     async def validate_input(req: InputRequest) -> InputResponse:
         verdict = check_input(req.message)
-        if verdict.allowed and app.state.llm is not None and await app.state.llm.is_attack(req.message):
+        mode = os.getenv("GUARDRAILS_LLM_INPUT", "suspicious")
+        if (verdict.allowed and app.state.llm is not None and needs_llm_input_check(req.message, mode)
+                and await app.state.llm.is_attack(req.message)):
             verdict = Verdict(False, "input_injection", "LLM: posible manipulación del asistente")
         if not verdict.allowed:
             await app.state.audit.write(

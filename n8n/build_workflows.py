@@ -236,7 +236,7 @@ return [{{ json: {{
 
     # --- 0. Consulta general (RAG)
     http_json(wf, "Buscar documentos (MCP)", f"{MCP}/tools/search_documents",
-              f"{{ query: {I}.message, top_k: 5 }}", (2200, 0), timeout_ms=20000, onError="continueErrorOutput")
+              f"{{ query: {I}.message, top_k: Math.min(5, parseInt($env.RAG_TOP_K, 10) || 3) }}", (2200, 0), timeout_ms=20000, onError="continueErrorOutput")
     code(wf, "Prompt consulta general", f"""
 const ctx = {I};
 const chunks = $input.first().json.chunks || [];

@@ -76,6 +76,8 @@ function clip(text, max) {
 }
 
 const HISTORY_CHARS = 300;
+// Largo de cada fragmento del reglamento en el prompt (menos texto = respuesta más rápida en CPU)
+const RAG_CHUNK_CHARS = 600;
 
 // maxMessages: 20 = 10 intercambios (Property 16). Con un LLM local se puede bajar con LLM_HISTORY_MESSAGES.
 function historyMessages(history, maxMessages) {
@@ -110,7 +112,7 @@ function ragContext(chunks) {
     return 'CONTEXTO: (no se encontraron fragmentos relevantes en los documentos institucionales)';
   }
   return 'CONTEXTO (fragmentos de documentos oficiales CCD de la UNAB):\n' +
-    chunks.map((c, i) => `[${i + 1}] (${c.document_name}) ${clip(c.text, 700)}`).join('\n\n');
+    chunks.map((c, i) => `[${i + 1}] (${c.document_name}) ${clip(c.text, RAG_CHUNK_CHARS)}`).join('\n\n');
 }
 
 // Acepta encabezados en inglés o español en la hoja de Google Sheets.

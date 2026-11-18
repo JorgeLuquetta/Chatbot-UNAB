@@ -30,6 +30,30 @@ OUTPUT_PROMPT = (
 )
 
 
+# Cuándo consultar al LLM en la ENTRADA (GUARDRAILS_LLM_INPUT):
+#   "suspicious" (por defecto): solo si el mensaje tiene señales de manipulación o es muy largo.
+#                 Las preguntas normales se ahorran una llamada al LLM (de 5 a 60 s en CPU).
+#   "always":     en todos los mensajes.   "off": nunca (solo reglas).
+# La SALIDA siempre se revisa con el LLM si está activado.
+SUSPICIOUS_MARKERS = (
+    "instruc", "ignor", "olvid", "rol", "actua", "actúa", "finge", "fingir", "simula", "personaje", "eres ahora",
+    "a partir de ahora", "desde ahora", "sistema", "system", "prompt", "regla", "restric", "sin filtro", "jailbreak",
+    "developer", "desarrollador", "modo ", "revela", "clave", "contraseña", "password", "token", "secreto",
+    "admin", "root", "sql", "<", "{", "```", "anterior", "previo",
+)
+SUSPICIOUS_LENGTH = 280
+
+
+def needs_llm_input_check(message: str, mode: str = "suspicious") -> bool:
+    mode = (mode or "suspicious").strip().lower()
+    if mode == "off":
+        return False
+    if mode == "always":
+        return True
+    text = (message or "").lower()
+    return len(text) > SUSPICIOUS_LENGTH or any(m in text for m in SUSPICIOUS_MARKERS)
+
+
 class LlmClassifier(Protocol):
     async def is_attack(self, message: str) -> bool | None: ...
     async def is_off_topic(self, response: str) -> bool | None: ...

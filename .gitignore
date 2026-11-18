@@ -16,3 +16,6 @@ android/app/google-services.json
 android/.idea/
 *.iml
 .DS_Store
+
+# Credenciales locales (no subir: el repo es público)
+CREDENCIALES.md

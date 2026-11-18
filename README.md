@@ -15,6 +15,68 @@ App Android ──HTTPS──► n8n :9000 ──► Guardrails (entrada) ──
                                          └──────────── LLM ──► Guardrails (salida) ──► memoria ──► respuesta
 ```
 
+## Demo en línea
+
+La VM de Azure publica todo por un túnel de Cloudflare con HTTPS. No hace falta abrir puertos.
+
+| Dirección | Qué es | Puerto en la VM |
+|---|---|---|
+| **https://chat.traumado.top** | Chat web para estudiantes: saluda, pide el ID y responde | `localhost:9001` |
+| **https://app.traumado.top** | Página con los QR: chat web y app en Expo Go | `localhost:9002` |
+| **https://expo.traumado.top** | Servidor de la app para Expo Go (`exps://expo.traumado.top`). En un navegador redirige a app.traumado.top | `localhost:8081` |
+| **https://chatbot.traumado.top** | n8n: interfaz de administración y webhooks (`/webhook/...`) | `localhost:9000` |
+
+**Acceso a n8n:** el correo es `admin@traumado.top`. La contraseña **no está en este repositorio**, porque el repo
+es público y la cuenta de n8n puede ejecutar código en el servidor. Está en `CREDENCIALES.md` dentro de la VM
+(`~/Chatbot-UNAB/CREDENCIALES.md`, ignorado por git). Pídanla al administrador del grupo.
+
+### Estudiantes de prueba
+
+El chat **no pide contraseña**: basta con el ID. Todos los datos son sintéticos. En total hay 42 estudiantes,
+de `U00000001` a `U00000042`, en 4 programas, con 76 materias en el catálogo (`db/seed_sintetico.sql`).
+Para el endpoint `/webhook/login` la contraseña de todos es `Unab2026*`.
+
+| ID | Estudiante | Programa | Semestre | Avance | Materias reprobadas |
+|---|---|---|---|---|---|
+| `U00000001` | Ana María Rojas | Ingeniería de Sistemas | 6.º | 68,2 % | 0 |
+| `U00000002` | Carlos Pérez | Ingeniería de Sistemas | 3.º | 27,3 % | 0 |
+| `U00000003` | Diego Jaimes Ortiz | Psicología | 7.º | 72,2 % | 1 |
+| `U00000005` | Santiago Vargas Castillo | Ingeniería Industrial | 6.º | 63,2 % | 1 |
+| `U00000006` | Laura Mantilla Jaimes | Administración de Empresas | 4.º | 47,1 % | 1 |
+| `U00000007` | Nicolás Rodríguez Suárez | Psicología | 9.º | 83,3 % | 1 |
+| `U00000009` | Samuel Pinzón Díaz | Ingeniería Industrial | 1.º | 0 % | 0 |
+| `U00000010` | Camila Rojas Quintero | Administración de Empresas | 3.º | 23,5 % | 2 |
+| `U00000020` | Daniela Duarte Moreno | Ingeniería de Sistemas | 9.º | 86,4 % | 2 |
+
+### Cómo verificarlo
+
+1. **Chat web:** abre https://chat.traumado.top y escribe `U00000010`. El bot saluda a Camila con su programa,
+   semestre y avance. Luego pregunta, por ejemplo:
+   - *¿Qué materias tengo pendientes?* (cursos del estudiante desde la BD)
+   - *¿Cuáles son los requisitos de grado?* (RAG sobre el reglamento)
+   - *¿Qué noticias hay en la universidad?* (noticias)
+   - *Recomiéndame un casino* → se bloquea porque no es un tema académico (guardrails)
+2. **App móvil:** instala Expo Go, abre https://app.traumado.top en el PC y escanea el QR de la app.
+3. **API directa:**
+   ```bash
+   curl -X POST https://chatbot.traumado.top/webhook/student-lookup \
+        -H 'content-type: application/json' -d '{"student_id":"U00000010"}'
+   curl -X POST https://chatbot.traumado.top/webhook/chat \
+        -H 'content-type: application/json' -d '{"student_id":"U00000010","message":"¿Cuál es mi avance?"}'
+   curl "https://chatbot.traumado.top/webhook/academic-route?student_id=U00000010"
+   ```
+4. **n8n:** entra a https://chatbot.traumado.top con la cuenta de administrador y revisa que los 7 workflows
+   estén activos y que aparezcan las ejecuciones.
+
+> Las respuestas que usan el LLM tardan de 30 a 90 s: el modelo corre en CPU y atiende una pregunta a la vez.
+
+### Siempre encendido
+
+Los contenedores tienen `restart: always`, Docker y `cloudflared` arrancan con el sistema, y un vigilante
+(`scripts/watchdog.sh`, timer `unab-watchdog` de systemd cada 2 min) reinicia lo que no responda.
+Si la VM se **apaga desde Azure**, hay que encenderla (`az vm start -g rg-vm-programas -n vm-programas`);
+al arrancar, todo se levanta solo.
+
 ## Estructura
 
 | Carpeta | Contenido |
@@ -35,7 +97,8 @@ App Android ──HTTPS──► n8n :9000 ──► Guardrails (entrada) ──
 
 ### 1. Supabase
 1. Crea un proyecto en Supabase.
-2. En **SQL Editor** ejecuta `db/schema.sql` y luego `db/seed.sql`.
+2. En **SQL Editor** ejecuta `db/schema.sql`, luego `db/seed.sql` y por último `db/seed_sintetico.sql`
+   (40 estudiantes más y el catálogo de materias; se puede ejecutar varias veces).
 3. Copia la cadena de conexión (**Project Settings → Database → Connection string**, modo *Session*, puerto 5432).
 
 Usuarios de prueba del seed: `U00000001` / `Unab2026*` (6.º semestre) y `U00000002` / `Unab2026*` (3.er semestre).
@@ -94,14 +157,17 @@ el relleno con ceros no cambia la similitud coseno). No hace falta ninguna cuent
 
 | Método | Ruta | Uso |
 |---|---|---|
+| POST | `/webhook/student-lookup` | `{student_id}` → `{student_id, full_name, program, current_semester, progress_percentage}` (404 si no existe) |
+| POST | `/webhook/chat` | `{student_id, message}` (o Bearer del login) → `{response, intent}` |
+| GET | `/webhook/academic-route` | `?student_id=` (o Bearer) → `{courses[], progress_percentage}` |
+| GET | `/webhook/calendar` | `?student_id=` (o Bearer) → `{events[]}` |
 | POST | `/webhook/login` | `{student_id, password}` → `{token, session_id, expires_at, full_name}` |
-| POST | `/webhook/chat` | `{session_id, message}` + Bearer → `{response, intent}` |
-| GET | `/webhook/academic-route` | Bearer → `{courses[], progress_percentage}` |
-| GET | `/webhook/calendar` | Bearer → `{events[]}` |
 | POST | `/webhook/register-device` | `{fcm_token}` + Bearer → `{ok}` |
 
-El backend **ignora el `session_id` del cuerpo** y usa el asociado al token, así un estudiante nunca puede leer
-la memoria o los cursos de otro.
+El backend **ignora el `session_id` del cuerpo** y usa el asociado al token o al ID. Así un estudiante nunca puede
+leer la memoria ni los cursos de otro *si usa el login*. **Modo demo:** con solo el ID, cualquiera que conozca un
+ID puede ver los datos de ese estudiante. Es aceptable porque los datos son sintéticos, pero en producción hay
+que volver al login.
 
 ## Pruebas
 

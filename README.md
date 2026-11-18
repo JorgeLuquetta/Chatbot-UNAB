@@ -152,6 +152,7 @@ el relleno con ceros no cambia la similitud coseno). No hace falta ninguna cuent
 - En preguntas con términos académicos claros se omite la clasificación de tema previa; la respuesta generada
   sigue pasando por la validación final de alcance.
 - Para acelerar: menos historial (`LLM_HISTORY_MESSAGES`), respuestas más cortas (`LLM_MAX_TOKENS`) o más vCPU.
+  Un límite demasiado bajo puede cortar la respuesta a mitad de una frase.
 - Para usar OpenAI u otro proveedor compatible: cambia `LLM_API_URL`, `LLM_MODEL`, `OPENAI_API_KEY` y
   `EMBEDDINGS_PROVIDER=openai` (y vuelve a ingerir los documentos).
 - Pruebas sin LLM: `EMBEDDINGS_PROVIDER=hash` y `python3 scripts/mock_llm.py` (`LLM_API_URL=http://<host>:8099/v1/chat/completions`).

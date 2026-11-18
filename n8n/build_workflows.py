@@ -299,11 +299,7 @@ return [{{ json: {{ messages: buildMessages(newsContext($input.first().json.news
     wf.link("¿Hay noticias?", "Responder sin noticias", 1)
 
     # --- Común: LLM → guardrails salida → memoria → respuesta
-    concise_messages = (
-        "$json.messages.map((m, i) => i === 0 ? { ...m, content: m.content + "
-        "' Responde en máximo 3 frases breves y 60 palabras. Resume listas y termina la respuesta completa.' } : m)"
-    )
-    http_json(wf, "Generar respuesta (LLM)", OPENAI_URL, llm_body(concise_messages, 100, 0.1), (2900, 300),
+    http_json(wf, "Generar respuesta (LLM)", OPENAI_URL, llm_body("$json.messages", 130, 0.1), (2900, 300),
               timeout_ms=LLM_TIMEOUT_MS, cred=CRED_OPENAI, cred_type="openAiApi", onError="continueErrorOutput")
     respond(wf, "Responder error LLM",
             "{ error: 'El asistente tardó demasiado en responder. Intenta de nuevo.' }", 504, (3120, 520))

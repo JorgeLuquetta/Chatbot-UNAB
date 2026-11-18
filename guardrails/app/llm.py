@@ -31,6 +31,12 @@ OUTPUT_PROMPT = (
     "universitarios (normas, cursos, notas, calendario, trámites, noticias o servicios de la universidad, "
     "orientación académica). Responde solo una palabra: ACADEMICO o FUERA."
 )
+TOPIC_PROMPT = (
+    "Clasifica la PREGUNTA de un estudiante al asistente de la UNAB. "
+    "ACADEMICO incluye reglamentos, materias, notas, créditos, matrícula, grado, calendario, trámites, becas, "
+    "bienestar, noticias, servicios universitarios y saludos. "
+    "FUERA es cualquier otro tema. Responde solo ACADEMICO o FUERA."
+)
 
 
 # Cuándo consultar al LLM en la ENTRADA (GUARDRAILS_LLM_INPUT):
@@ -48,6 +54,11 @@ SUSPICIOUS_PATTERNS = tuple(re.compile(pattern) for pattern in (
     r"<\s*\|?\s*(?:im_start|system|endoftext)|\[/?inst\]|<<\s*/?sys\s*>>|\b(?:system|assistant|developer)\s*:",
 ))
 SUSPICIOUS_LENGTH = 280
+_LIKELY_ACADEMIC_RE = re.compile(
+    r"\b(?:unab|universidad|universitario|universitaria|estudiante|reglamento|materias?|asignaturas?|"
+    r"cursos?|notas?|calificaciones?|grado|semestre|matricula|calendario|parciales?|examenes?|"
+    r"facultad|programa|carrera|creditos?|becas?|bienestar|tramites?|profesores?|docentes?|plan de estudios)\b"
+)
 
 
 def needs_llm_input_check(message: str, mode: str = "suspicious") -> bool:
@@ -60,9 +71,18 @@ def needs_llm_input_check(message: str, mode: str = "suspicious") -> bool:
     return len(text) > SUSPICIOUS_LENGTH or any(pattern.search(text) for pattern in SUSPICIOUS_PATTERNS)
 
 
+def needs_llm_topic_check(message: str) -> bool:
+    return not _LIKELY_ACADEMIC_RE.search(normalize(message or ""))
+
+
+def topic_check_enabled(mode: str = "on") -> bool:
+    return (mode or "on").strip().lower() != "off"
+
+
 class LlmClassifier(Protocol):
     async def is_attack(self, message: str) -> bool | None: ...
     async def is_off_topic(self, response: str) -> bool | None: ...
+    async def is_off_topic_question(self, message: str) -> bool | None: ...
 
 
 Chat = Callable[[str, str], Awaitable[str]]
@@ -88,6 +108,14 @@ class OllamaClassifier:
         if "ATAQUE" in answer:
             return True
         return False if "SEGURO" in answer else None
+
+    async def is_off_topic_question(self, message: str) -> bool | None:
+        answer = await self._ask(TOPIC_PROMPT, "PREGUNTA: " + message[:400])
+        if answer is None:
+            return None
+        if "FUERA" in answer:
+            return True
+        return False if "ACADEMICO" in answer else None
 
     async def is_off_topic(self, response: str) -> bool | None:
         # Basta el inicio de la respuesta para juzgar el tema (prompt más corto = más rápido en CPU)

@@ -299,7 +299,7 @@ return [{{ json: {{ messages: buildMessages(newsContext($input.first().json.news
     wf.link("¿Hay noticias?", "Responder sin noticias", 1)
 
     # --- Común: LLM → guardrails salida → memoria → respuesta
-    http_json(wf, "Generar respuesta (LLM)", OPENAI_URL, llm_body("$json.messages", 130, 0.1), (2900, 300),
+    http_json(wf, "Generar respuesta (LLM)", OPENAI_URL, llm_body("$json.messages", 700, 0.1), (2900, 300),
               timeout_ms=LLM_TIMEOUT_MS, cred=CRED_OPENAI, cred_type="openAiApi", onError="continueErrorOutput")
     respond(wf, "Responder error LLM",
             "{ error: 'El asistente tardó demasiado en responder. Intenta de nuevo.' }", 504, (3120, 520))

@@ -133,4 +133,4 @@ def test_bearer_token():
 def test_chat_response_tokens_are_bounded_by_default():
     workflow = json.loads((ROOT / "n8n" / "workflows" / "01_chat_ruteo.json").read_text(encoding="utf-8"))
     node = next(n for n in workflow["nodes"] if n["name"] == "Generar respuesta (LLM)")
-    assert "Math.min(130, parseInt($env.LLM_MAX_TOKENS, 10) || 130)" in node["parameters"]["jsonBody"]
+    assert "Math.min(700, parseInt($env.LLM_MAX_TOKENS, 10) || 700)" in node["parameters"]["jsonBody"]

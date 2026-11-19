@@ -3,53 +3,134 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#f6f1ff">
 <title>App Chatbot UNAB</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700;800&family=Fredoka:wght@500;600&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
 <style>
-  :root { --bg: #f4f5f7; --panel: #ffffff; --text: #1d2330; --muted: #6b7385; --line: #e2e5ea; --brand: #c8102e; --ok: #067647; }
+  :root {
+    --bg: #f6f1ff;
+    --blob-1: #ffd6e8; --blob-2: #c9e8ff; --blob-3: #d4f5e4; --blob-4: #fff1c9;
+    --glass: rgba(255, 255, 255, .66); --glass-line: rgba(255, 255, 255, .9);
+    --text: #2e2645; --muted: #6f6789; --line: #e7defa;
+    --lavender: #b9a6f5; --pink: #ffb3cf; --mint: #9fe3c1; --sky: #9fd3ff; --peach: #ffc7a8; --lemon: #ffe58f;
+    --brand: #6a4fd6; --on-pastel: #2e2645; --ok: #1f7a52;
+    --shadow: 0 20px 60px -20px rgba(110, 80, 200, .35), 0 4px 16px -6px rgba(110, 80, 200, .18);
+  }
   @media (prefers-color-scheme: dark) {
-    :root { --bg: #12141a; --panel: #1b1e26; --text: #e7e9ee; --muted: #9aa1b1; --line: #2b2f3a; --brand: #e0384f; --ok: #6ce9a6; }
+    :root:not([data-theme="light"]) {
+      --bg: #17132a;
+      --blob-1: #5a2f55; --blob-2: #24406a; --blob-3: #1f4f45; --blob-4: #5a4a24;
+      --glass: rgba(34, 28, 58, .66); --glass-line: rgba(255, 255, 255, .08);
+      --text: #efeaff; --muted: #b3aacf; --line: #3a3160;
+      --brand: #c9b8ff; --ok: #8ff0c0;
+      --shadow: 0 20px 60px -20px rgba(0, 0, 0, .6), 0 4px 16px -6px rgba(0, 0, 0, .4);
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #17132a;
+    --blob-1: #5a2f55; --blob-2: #24406a; --blob-3: #1f4f45; --blob-4: #5a4a24;
+    --glass: rgba(34, 28, 58, .66); --glass-line: rgba(255, 255, 255, .08);
+    --text: #efeaff; --muted: #b3aacf; --line: #3a3160;
+    --brand: #c9b8ff; --ok: #8ff0c0;
+    --shadow: 0 20px 60px -20px rgba(0, 0, 0, .6), 0 4px 16px -6px rgba(0, 0, 0, .4);
   }
   * { box-sizing: border-box; }
-  body { margin: 0; background: var(--bg); color: var(--text); font: 16px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
-  main { max-width: 900px; margin: 0 auto; padding: 32px 16px; }
-  h1 { font-size: 26px; margin: 0 0 4px; }
-  .sub { color: var(--muted); margin: 0 0 28px; }
-  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px; }
-  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 16px; padding: 22px; display: flex; flex-direction: column; align-items: center; text-align: center; }
-  .card h2 { font-size: 18px; margin: 0 0 4px; }
-  .card p { color: var(--muted); font-size: 14px; margin: 0 0 16px; }
-  .qr { background: #fff; padding: 14px; border-radius: 12px; width: 248px; height: 248px; display: grid; place-items: center; }
+  body { margin: 0; min-height: 100vh; background: var(--bg); color: var(--text); font: 16px/1.5 "Nunito", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+
+  .aurora { position: fixed; inset: 0; z-index: 0; overflow: hidden; pointer-events: none; }
+  .aurora span { position: absolute; width: 46vmax; height: 46vmax; border-radius: 50%; filter: blur(60px); opacity: .85; animation: drift 22s ease-in-out infinite alternate; }
+  .aurora span:nth-child(1) { background: var(--blob-1); top: -14vmax; left: -10vmax; }
+  .aurora span:nth-child(2) { background: var(--blob-2); top: -8vmax; right: -14vmax; animation-delay: -6s; animation-duration: 26s; }
+  .aurora span:nth-child(3) { background: var(--blob-3); bottom: -18vmax; left: 10vmax; animation-delay: -12s; animation-duration: 30s; }
+  .aurora span:nth-child(4) { background: var(--blob-4); bottom: -14vmax; right: -6vmax; width: 34vmax; height: 34vmax; animation-delay: -3s; }
+  .aurora::after { content: ""; position: absolute; inset: 0; background-image: radial-gradient(rgba(120, 90, 200, .10) 1px, transparent 1px); background-size: 22px 22px; }
+  @keyframes drift {
+    0%   { transform: translate(0, 0) scale(1); }
+    50%  { transform: translate(6vmax, 4vmax) scale(1.08); }
+    100% { transform: translate(-4vmax, 7vmax) scale(.95); }
+  }
+
+  main { position: relative; z-index: 1; max-width: 960px; margin: 0 auto; padding: 48px 16px 40px; }
+  .hero { text-align: center; margin-bottom: 36px; }
+  .badge { display: inline-flex; align-items: center; gap: 8px; padding: 6px 14px; border-radius: 999px; background: var(--glass); border: 1px solid var(--glass-line); font-size: 13px; font-weight: 800; color: var(--muted); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); }
+  .badge::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: #5fd39a; box-shadow: 0 0 0 4px rgba(95, 211, 154, .25); }
+  h1 { font: 600 clamp(30px, 6vw, 46px)/1.1 "Fredoka", "Nunito", sans-serif; margin: 16px 0 10px; }
+  h1 em { font-style: normal; background: linear-gradient(90deg, #8a6cf0, #f07aa8, #5fb8f0); -webkit-background-clip: text; background-clip: text; color: transparent; }
+  .sub { color: var(--muted); margin: 0; font-size: 17px; }
+
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr)); gap: 22px; }
+  .card {
+    position: relative; overflow: hidden;
+    background: var(--glass); border: 1px solid var(--glass-line); border-radius: 28px; padding: 30px 24px 26px;
+    backdrop-filter: blur(22px) saturate(1.4); -webkit-backdrop-filter: blur(22px) saturate(1.4);
+    box-shadow: var(--shadow); display: flex; flex-direction: column; align-items: center; text-align: center;
+    transition: transform .25s ease;
+  }
+  .card:hover { transform: translateY(-4px); }
+  .card::before { content: ""; position: absolute; inset: 0 0 auto; height: 8px; }
+  .card.web::before { background: linear-gradient(90deg, var(--lavender), var(--pink)); }
+  .card.expo::before { background: linear-gradient(90deg, var(--mint), var(--sky)); }
+  .icon { width: 54px; height: 54px; border-radius: 18px; display: grid; place-items: center; font-size: 26px; margin-bottom: 12px; }
+  .web .icon { background: linear-gradient(135deg, var(--lavender), var(--pink)); }
+  .expo .icon { background: linear-gradient(135deg, var(--mint), var(--sky)); }
+  .card h2 { font: 600 21px/1.2 "Fredoka", "Nunito", sans-serif; margin: 0 0 6px; }
+  .card p { color: var(--muted); font-size: 14px; margin: 0 0 20px; max-width: 300px; }
+
+  .qr-frame { padding: 5px; border-radius: 26px; background: conic-gradient(from 180deg, var(--pink), var(--lavender), var(--sky), var(--mint), var(--lemon), var(--pink)); }
+  .qr { background: #fff; padding: 14px; border-radius: 22px; width: 248px; height: 248px; display: grid; place-items: center; }
   .qr img, .qr canvas { display: block; }
-  .url { margin-top: 12px; font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 13px; word-break: break-all; }
-  .url a { color: var(--brand); }
-  .pending { width: 248px; height: 248px; border: 2px dashed var(--line); border-radius: 12px; display: grid; place-items: center; color: var(--muted); font-size: 14px; padding: 20px; }
-  ol { text-align: left; font-size: 14px; color: var(--muted); padding-left: 20px; margin: 16px 0 0; }
+  .url { margin-top: 14px; font-size: 13px; word-break: break-all; }
+  .url a, #url-expo:not(:empty) { display: inline-block; padding: 5px 14px; border-radius: 999px; background: rgba(185, 166, 245, .22); color: var(--brand); font-weight: 800; text-decoration: none; }
+  .url a:hover { text-decoration: underline; }
+  .pending { width: 258px; height: 258px; border: 3px dashed var(--line); border-radius: 26px; display: grid; place-items: center; color: var(--muted); font-size: 14px; font-weight: 600; padding: 24px; background: rgba(255, 255, 255, .25); }
+  .pending::before { content: "⏳"; display: block; font-size: 32px; margin-bottom: 6px; animation: spin 2.4s ease-in-out infinite; }
+  @keyframes spin { 50% { transform: rotate(180deg); } 100% { transform: rotate(360deg); } }
+
+  ol { list-style: none; counter-reset: s; text-align: left; font-size: 14px; color: var(--muted); padding: 0; margin: 22px 0 0; display: grid; gap: 10px; }
+  ol li { counter-increment: s; display: flex; align-items: flex-start; gap: 10px; }
+  ol li::before { content: counter(s); flex: none; width: 24px; height: 24px; border-radius: 50%; display: grid; place-items: center; font-weight: 800; font-size: 12px; color: var(--on-pastel); }
+  ol li:nth-child(1)::before { background: var(--lavender); }
+  ol li:nth-child(2)::before { background: var(--pink); }
+  ol li:nth-child(3)::before { background: var(--mint); }
+  ol strong { color: var(--text); }
   .status { font-size: 13px; margin-top: 10px; }
   .status.ok { color: var(--ok); }
+
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { animation: none !important; transition: none !important; }
+  }
 </style>
 </head>
 <body>
+<div class="aurora" aria-hidden="true"><span></span><span></span><span></span><span></span></div>
 <main>
-  <h1>Chatbot UNAB en tu celular</h1>
-  <p class="sub">Escanea un código con la cámara del celular.</p>
+  <div class="hero">
+    <span class="badge">Asistente académico UNAB</span>
+    <h1>Chatbot UNAB <em>en tu celular</em></h1>
+    <p class="sub">Escanea un código con la cámara del celular.</p>
+  </div>
   <div class="grid">
-    <section class="card">
+    <section class="card web">
+      <div class="icon" aria-hidden="true">💬</div>
       <h2>Chat web</h2>
       <p>Se abre en el navegador del celular. No hay que instalar nada.</p>
-      <div class="qr" id="qr-web"></div>
+      <div class="qr-frame"><div class="qr" id="qr-web"></div></div>
       <div class="url"><a id="url-web" href="#"></a></div>
       <div class="status" id="st-web"></div>
     </section>
-    <section class="card">
+    <section class="card expo">
+      <div class="icon" aria-hidden="true">📱</div>
       <h2>App móvil (Expo Go)</h2>
       <p>La app nativa del proyecto. Requiere Expo Go instalado.</p>
       <div id="qr-expo-box"><div class="pending" id="expo-pending">El servidor de Expo no está corriendo en este momento.</div></div>
       <div class="url" id="url-expo"></div>
       <ol>
-        <li>Instala <strong>Expo Go</strong> desde Play Store o App Store.</li>
-        <li>Abre Expo Go y toca <strong>Scan QR code</strong>. En iPhone, usa la cámara.</li>
-        <li>Entra con tu ID de estudiante.</li>
+        <li><span>Instala <strong>Expo Go</strong> desde Play Store o App Store.</span></li>
+        <li><span>Abre Expo Go y toca <strong>Scan QR code</strong>. En iPhone, usa la cámara.</span></li>
+        <li><span>Entra con tu ID de estudiante.</span></li>
       </ol>
     </section>
   </div>
@@ -58,7 +139,7 @@
 const CHAT_URL = "https://chat.traumado.top";
 function drawQR(el, text) {
   el.innerHTML = "";
-  new QRCode(el, { text, width: 220, height: 220, colorDark: "#1d2330", colorLight: "#ffffff", correctLevel: QRCode.CorrectLevel.M });
+  new QRCode(el, { text, width: 220, height: 220, colorDark: "#2e2645", colorLight: "#ffffff", correctLevel: QRCode.CorrectLevel.M });
 }
 drawQR(document.getElementById("qr-web"), CHAT_URL);
 const a = document.getElementById("url-web"); a.href = CHAT_URL; a.textContent = CHAT_URL;
@@ -71,7 +152,7 @@ function checkExpo() {
     const url = document.getElementById("url-expo");
     if (txt.includes("running")) {
       if (!document.getElementById("qr-expo")) {
-        box.innerHTML = '<div class="qr" id="qr-expo"></div>';
+        box.innerHTML = '<div class="qr-frame"><div class="qr" id="qr-expo"></div></div>';
         drawQR(document.getElementById("qr-expo"), EXPO_URL);
         url.textContent = EXPO_URL;
       }

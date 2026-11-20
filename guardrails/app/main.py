@@ -31,6 +31,9 @@ class InputResponse(BaseModel):
 class OutputRequest(BaseModel):
     session_id: str = ""
     response: str = ""
+    # Contexto de una fuente ya filtrada por el sistema (p. ej. noticias por categoría): se aplican solo las
+    # reglas deterministas, no el juicio del LLM, que da falsos positivos con noticias de medios externos.
+    trusted_context: bool = False
 
 
 class OutputResponse(BaseModel):
@@ -75,7 +78,8 @@ def create_app(sink: AuditSink | None = None, classifier: LlmClassifier | None |
     @app.post("/validate-output", response_model=OutputResponse)
     async def validate_output(req: OutputRequest) -> OutputResponse:
         verdict = check_output(req.response)
-        if verdict.allowed and app.state.llm is not None and await app.state.llm.is_off_topic(req.response):
+        if (verdict.allowed and app.state.llm is not None and not req.trusted_context
+                and await app.state.llm.is_off_topic(req.response)):
             verdict = Verdict(False, "output_scope", "LLM: respuesta fuera del ámbito académico")
         if not verdict.allowed:
             await app.state.audit.write(

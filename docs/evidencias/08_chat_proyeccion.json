@@ -1,0 +1,16 @@
+{
+  "request": {
+    "method": "POST",
+    "url": "http://localhost:9000/webhook/chat",
+    "body": {
+      "student_id": "U00000010",
+      "message": "¿Cuándo me voy a graduar?"
+    }
+  },
+  "status": 200,
+  "seconds": 210.174045,
+  "response": {
+    "response": "Tu grado se estima que se completará en 2029-1.",
+    "intent": "plan-academico"
+  }
+}

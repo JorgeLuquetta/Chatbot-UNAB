@@ -6,7 +6,7 @@ import { ApiError } from './errors';
 // Orden de prioridad: EXPO_PUBLIC_API_URL (archivo .env de la app) → app.json extra.apiUrl
 const fromEnv = process.env.EXPO_PUBLIC_API_URL;
 const fromConfig = (Constants.expoConfig?.extra as { apiUrl?: string } | undefined)?.apiUrl;
-export const API_URL = (fromEnv || fromConfig || 'https://chatbot.traumado.top/webhook').replace(/\/+$/, '');
+export const API_URL = (fromEnv || fromConfig || 'https://n8n.traumado.top/webhook').replace(/\/+$/, '');
 
 // El LLM corre en CPU (Ollama): una respuesta puede tardar más de un minuto.
 const CHAT_TIMEOUT_MS = 300_000;
@@ -48,6 +48,31 @@ export interface StudentResponse {
   progress_percentage: number;
 }
 
+export interface PlanCourse {
+  course_code: string; course_name: string; semester: number; credits: number;
+  repeat: boolean; conditional: boolean; conditional_on: { course_code: string; course_name: string }[];
+}
+export interface AcademicPlan {
+  student: { student_id: string; full_name: string; program: string; current_semester: number };
+  status: {
+    gpa: number | null; standing: string; approved_credits: number; total_credits: number;
+    progress_percentage: number; failed_courses: number; in_progress: { course_code: string; course_name: string }[];
+  };
+  enrollment: {
+    term: string; max_credits: number; credits: number; courses: PlanCourse[];
+    blocked: { course_code: string; course_name: string; semester: number;
+               missing_prerequisites: { course_code: string; course_name: string }[] }[];
+  };
+  projection: {
+    remaining_credits: number; credits_per_term: number; terms_remaining: number;
+    prerequisite_chain: number; estimated_graduation_term: string; on_track: boolean;
+  };
+  recommendations: { type: string; text: string }[];
+}
+export interface NewsItem {
+  title: string; summary: string; source_url: string; source_name: string; category: string; published_at: string;
+}
+
 const qs = (student_id: string) => `?student_id=${encodeURIComponent(student_id)}`;
 
 export const api = {
@@ -62,6 +87,12 @@ export const api = {
 
   academicRoute: (student_id: string) =>
     request<{ courses: Course[]; progress_percentage: number }>(`academic-route${qs(student_id)}`),
+
+  // Matrícula sugerida, estado académico, proyección de grado y recomendaciones
+  academicPlan: (student_id: string) => request<AcademicPlan>(`academic-plan${qs(student_id)}`),
+
+  news: (category = '') =>
+    request<{ news: NewsItem[] }>(`news?limit=30${category ? `&category=${encodeURIComponent(category)}` : ''}`),
 
   calendar: (student_id: string) => request<{ events: CalendarEvent[] }>(`calendar${qs(student_id)}`),
 

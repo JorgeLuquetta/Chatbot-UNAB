@@ -20,6 +20,7 @@ LIB = (ROOT / "code" / "lib.js").read_text(encoding="utf-8").split("// @export")
 CRED_PG = {"postgres": {"id": "unabSupabasePg01", "name": "Supabase Postgres"}}
 CRED_OPENAI = {"openAiApi": {"id": "unabOpenAiApi001", "name": "OpenAI API"}}
 CRED_GOOGLE = {"googleApi": {"id": "unabGoogleSa0001", "name": "Google Service Account"}}
+CRED_OLLAMA = {"ollamaApi": {"id": "unabOllamaApi001", "name": "Ollama local"}}
 
 MCP = "http://mcp-server:8000"
 GUARDRAILS = "http://guardrails:8080"
@@ -39,14 +40,15 @@ def _id(seed: str) -> str:
 
 
 class WF:
-    def __init__(self, name: str, wf_id: str) -> None:
+    def __init__(self, name: str, wf_id: str, x_scale: float = 1.0) -> None:
         self.name, self.wf_id = name, wf_id
+        self.x_scale = x_scale  # separa los nodos en el lienzo de n8n
         self.nodes: list[dict] = []
         self.connections: dict[str, dict] = {}
 
     def add(self, name, type_, version, params, pos, **extra) -> str:
         node = {"id": _id(self.name + "/" + name), "name": name, "type": type_, "typeVersion": version,
-                "position": list(pos), "parameters": params}
+                "position": [round(pos[0] * self.x_scale), pos[1]], "parameters": params}
         node.update(extra)
         self.nodes.append(node)
         return name
@@ -110,6 +112,15 @@ def if_node(wf, name, left_expr, op_type, operation, pos, right=""):
                                   "conditions": [cond], "combinator": "and"}, "options": {}}, pos)
 
 
+SQL_CALENDAR = ("SELECT event_name, to_char(event_date, 'YYYY-MM-DD') AS event_date, description "
+                "FROM academic_calendar ORDER BY event_date")
+
+
+def calendar_read(wf, name, pos, **extra):
+    """Calendario académico desde PostgreSQL (tabla academic_calendar, db/academico.sql)."""
+    return postgres(wf, name, SQL_CALENDAR, None, pos, **extra)
+
+
 def sheets_read(wf, name, pos, **extra):
     return wf.add(name, "n8n-nodes-base.googleSheets", 4.5, {
         "authentication": "serviceAccount",
@@ -140,6 +151,12 @@ return [{ json: {
 } }];
 """
 
+# Mensaje al estudiante cuando los guardrails rechazan la entrada (según el motivo)
+REJECT_EXPR = ("{ error: String($json.reason || '').startsWith('Tarea') ? "
+               "'Solo respondo consultas informativas de la universidad: matrícula, estado académico, proyección, "
+               "reglamento, calendario, materias y noticias. No resuelvo operaciones, ejercicios ni tareas.' : "
+               "'Solo puedo ayudarte con consultas informativas de la UNAB (matrícula, materias, reglamento, "
+               "calendario, noticias). Reformula tu pregunta.' }")
 ERR_UNAVAILABLE = "{ error: 'El servicio no está disponible en este momento. Intenta de nuevo en unos minutos.' }"
 ERR_SESSION = "{ error: 'Tu sesión expiró. Inicia sesión de nuevo.' }"
 ERR_SESSION_OR_ID = "{ error: 'No encontramos ese ID de estudiante (o tu sesión expiró).' }"
@@ -173,18 +190,23 @@ def auth_chain(wf, x0, y, webhook_name, method, path, allow_student_id=False):
 
 # ================================================================== 1. Chat (ruteo + 4 flujos)
 def build_chat() -> dict:
-    wf = WF("UNAB Chatbot - Chat (Ruteo por Intención)", "unabChatRouting1")
+    wf = WF("UNAB Chatbot - Chat (Ruteo por Intención)", "unabChatRouting1", x_scale=1.6)
     auth_chain(wf, 0, 300, "Webhook chat", "POST", "chat", allow_student_id=True)
     S = "$('Validar sesión').first().json.session_id"
     M = "$('Preparar petición').first().json.message"
 
+    # ¿El mensaje responde a una solicitud de envío por correo pendiente ("sí", un correo nuevo o "no")?
+    http_json(wf, "Correo pendiente (MCP)", f"{MCP}/tools/confirm_email", f"{{ session_id: {S}, message: {M} }}",
+              (770, 140), timeout_ms=60000, onError="continueRegularOutput")
+    if_node(wf, "¿Respuesta de correo?", "$json.handled", "boolean", "true", (880, 140))
+    respond(wf, "Responder correo", "{ response: $json.reply, intent: 'correo' }", 200, (1100, 0))
     postgres(wf, "Cargar historial", "SELECT get_recent_history($1, 10) AS history", f"[ {S} ]",
              (880, 300), onError="continueErrorOutput")
     http_json(wf, "Guardrails entrada", f"{GUARDRAILS}/validate-input", f"{{ session_id: {S}, message: {M} }}",
               (1100, 300), timeout_ms=GUARDRAILS_TIMEOUT_MS, onError="continueErrorOutput")
     if_node(wf, "¿Entrada permitida?", "$json.allowed", "boolean", "true", (1320, 300))
     respond(wf, "Responder mensaje rechazado",
-            "{ error: 'No pude procesar tu mensaje. Reformula tu pregunta sobre temas académicos de la UNAB.' }",
+            REJECT_EXPR,
             400, (1540, 500))
     classifier_prompt = json.dumps(
         "Clasifica el mensaje del estudiante en exactamente una de estas etiquetas: "
@@ -193,7 +215,10 @@ def build_chat() -> dict:
         "calendario (fechas académicas: matrículas, parciales, inicio o fin de clases, plazos), "
         "cursos-realizados (SOLO el historial personal del estudiante que pregunta: mis cursos aprobados, "
         "pendientes o en curso, mis notas, mi avance), "
-        "noticias (noticias, eventos o novedades recientes de la universidad). "
+        "noticias (noticias, eventos o novedades recientes de la universidad, educación o tecnología), "
+        "plan-academico (qué materias matricular el próximo semestre, estado académico y promedio, "
+        "proyección o fecha estimada de grado, recomendaciones personalizadas para tener éxito), "
+        "correo (pide que le ENVÍEN por correo noticias, su informe de avance o su informe de materias). "
         "Responde solo con la etiqueta.", ensure_ascii=False)
     http_json(wf, "Clasificar intención", OPENAI_URL,
               llm_body(f"[{{ role: 'system', content: {classifier_prompt} }}, {{ role: 'user', content: {M} }}]", 10, 0),
@@ -212,12 +237,16 @@ return [{{ json: {{
   session_id: {S},
   message: {M},
   history: $('Cargar historial').first().json.history,
+  news_category: newsCategory({M}),
 }} }}];
 """, (1760, 300))
     wf.add("Enrutar por intención", "n8n-nodes-base.switch", 3,
-           {"mode": "expression", "numberOutputs": 4, "output": "={{ $json.route }}"}, (1980, 300))
+           {"mode": "expression", "numberOutputs": 6, "output": "={{ $json.route }}"}, (1980, 300))
 
-    wf.link("¿Sesión válida?", "Cargar historial", 0)
+    wf.link("¿Sesión válida?", "Correo pendiente (MCP)", 0)
+    wf.link("Correo pendiente (MCP)", "¿Respuesta de correo?")
+    wf.link("¿Respuesta de correo?", "Responder correo", 0)
+    wf.link("¿Respuesta de correo?", "Cargar historial", 1)
     wf.link("Cargar historial", "Guardrails entrada", 0)
     wf.link("Cargar historial", "Responder 503 (BD)", 1)
     wf.link("Guardrails entrada", "¿Entrada permitida?", 0)
@@ -248,8 +277,8 @@ return [{{ json: {{ messages: buildMessages(ragContext(chunks), ctx.history, ctx
     wf.link("Buscar documentos (MCP)", "Prompt consulta general", 0)
     wf.link("Buscar documentos (MCP)", "Responder RAG no disponible", 1)
 
-    # --- 1. Calendario (Google Sheets)
-    sheets_read(wf, "Leer calendario (Sheets)", (2200, 200), alwaysOutputData=True, onError="continueRegularOutput")
+    # --- 1. Calendario (PostgreSQL: academic_calendar)
+    calendar_read(wf, "Leer calendario (BD)", (2200, 200), alwaysOutputData=True, onError="continueRegularOutput")
     if_node(wf, "¿Calendario disponible?", "$json.error", "string", "empty", (2310, 200))
     code(wf, "Prompt calendario", f"""
 const ctx = {I};
@@ -258,8 +287,8 @@ return [{{ json: {{ messages: buildMessages(calendarContext(events), ctx.history
 """, (2420, 200))
     respond_fixed("Responder calendario no disponible",
                   "El calendario académico está temporalmente no disponible. Intenta de nuevo más tarde.", 100)
-    wf.link("Enrutar por intención", "Leer calendario (Sheets)", 1)
-    wf.link("Leer calendario (Sheets)", "¿Calendario disponible?")
+    wf.link("Enrutar por intención", "Leer calendario (BD)", 1)
+    wf.link("Leer calendario (BD)", "¿Calendario disponible?")
     wf.link("¿Calendario disponible?", "Prompt calendario", 0)
     wf.link("¿Calendario disponible?", "Responder calendario no disponible", 1)
 
@@ -284,8 +313,9 @@ return [{{ json: {{ logged: true }} }}];
     # --- 3. Noticias
     postgres(wf, "Consultar noticias",
              "SELECT COALESCE(json_agg(n ORDER BY n.published_at DESC), '[]'::json) AS news FROM ("
-             "SELECT title, published_at, summary, source_url FROM noticias ORDER BY published_at DESC LIMIT 20) n",
-             None, (2200, 760), onError="continueErrorOutput")
+             "SELECT title, published_at, summary, source_url, category, source_name FROM noticias "
+             "WHERE $1 = '' OR category = $1 ORDER BY published_at DESC LIMIT 20) n",
+             f"[ {I}.news_category ]", (2200, 760), onError="continueErrorOutput")
     if_node(wf, "¿Hay noticias?", "($json.news || []).length", "number", "gt", (2420, 760), right=0)
     code(wf, "Prompt noticias", f"""
 const ctx = {I};
@@ -298,6 +328,30 @@ return [{{ json: {{ messages: buildMessages(newsContext($input.first().json.news
     wf.link("¿Hay noticias?", "Prompt noticias", 0)
     wf.link("¿Hay noticias?", "Responder sin noticias", 1)
 
+    # --- 4. Plan académico: matrícula, estado académico, proyección y recomendaciones (MCP → SQL)
+    http_json(wf, "Plan académico (MCP)", f"{MCP}/tools/get_academic_plan",
+              f"{{ session_id: {I}.session_id }}", (2200, 1000), timeout_ms=8000, onError="continueErrorOutput")
+    code(wf, "Prompt plan académico", f"""
+const ctx = {I};
+return [{{ json: {{ messages: buildMessages(planContext($input.first().json), ctx.history, ctx.message, {HIST}) }} }}];
+""", (2420, 1000))
+    respond_fixed("Responder plan no disponible",
+                  "No pude calcular tu plan académico en este momento. Intenta de nuevo más tarde.", 1160)
+    wf.link("Enrutar por intención", "Plan académico (MCP)", 4)
+    wf.link("Plan académico (MCP)", "Prompt plan académico", 0)
+    wf.link("Plan académico (MCP)", "Responder plan no disponible", 1)
+
+    # --- 5. Correo: solo noticias, informe de avance o informe de materias (respuesta sin LLM)
+    http_json(wf, "Solicitar envío (MCP)", f"{MCP}/tools/request_email",
+              f"{{ session_id: {I}.session_id, message: {I}.message }}", (2200, 1300), timeout_ms=10000,
+              onError="continueErrorOutput")
+    respond(wf, "Responder solicitud de correo", f"{{ response: $json.reply, intent: 'correo' }}", 200, (2420, 1300))
+    respond_fixed("Responder correo no disponible",
+                  "El envío de correos no está disponible en este momento. Intenta más tarde.", 1460)
+    wf.link("Enrutar por intención", "Solicitar envío (MCP)", 5)
+    wf.link("Solicitar envío (MCP)", "Responder solicitud de correo", 0)
+    wf.link("Solicitar envío (MCP)", "Responder correo no disponible", 1)
+
     # --- Común: LLM → guardrails salida → memoria → respuesta
     http_json(wf, "Generar respuesta (LLM)", OPENAI_URL, llm_body("$json.messages", 700, 0.1), (2900, 300),
               timeout_ms=LLM_TIMEOUT_MS, cred=CRED_OPENAI, cred_type="openAiApi", onError="continueErrorOutput")
@@ -305,19 +359,24 @@ return [{{ json: {{ messages: buildMessages(newsContext($input.first().json.news
             "{ error: 'El asistente tardó demasiado en responder. Intenta de nuevo.' }", 504, (3120, 520))
     code(wf, "Extraer respuesta", "return [{ json: { llm_response: llmText($input.first().json) } }];", (3120, 300))
     http_json(wf, "Guardrails salida", f"{GUARDRAILS}/validate-output",
-              f"{{ session_id: {I}.session_id, response: $json.llm_response }}", (3340, 300),
+              f"{{ session_id: {I}.session_id, response: $json.llm_response, "
+              f"trusted_context: {I}.intent === 'noticias' }}", (3340, 300),
               timeout_ms=GUARDRAILS_TIMEOUT_MS, onError="continueErrorOutput")
     code(wf, "Respuesta final", """
 const g = $input.first().json;
 // Si guardrails falla o no responde, se aplica el fallback (fail-closed).
-const response = typeof g.sanitized_response === 'string' && g.sanitized_response ? g.sanitized_response : FALLBACK_RESPONSE;
+let response = typeof g.sanitized_response === 'string' && g.sanitized_response ? g.sanitized_response : FALLBACK_RESPONSE;
+const ctx = $('Normalizar intención').first().json;
+if (ctx.intent === 'plan-academico' && response !== FALLBACK_RESPONSE) {
+  try { response = ensureEnrollment(response, $('Plan académico (MCP)').first().json, ctx.message); } catch (e) {}
+}
 return [{ json: { response } }];
 """, (3560, 300))
     postgres(wf, "Guardar memoria", "SELECT save_exchange($1, $2, $3)",
              f"[ {I}.session_id, {I}.message, $json.response ]", (3780, 300), onError="continueRegularOutput")
     respond(wf, "Responder OK", f"{{ response: $('Respuesta final').first().json.response, intent: {I}.intent }}",
             200, (4000, 300))
-    for p in ["Prompt consulta general", "Prompt calendario", "Prompt cursos", "Prompt noticias"]:
+    for p in ["Prompt consulta general", "Prompt calendario", "Prompt cursos", "Prompt noticias", "Prompt plan académico"]:
         wf.link(p, "Generar respuesta (LLM)")
     wf.link("Generar respuesta (LLM)", "Extraer respuesta", 0)
     wf.link("Generar respuesta (LLM)", "Responder error LLM", 1)
@@ -373,13 +432,13 @@ def build_academic_route() -> dict:
 def build_calendar() -> dict:
     wf = WF("UNAB Chatbot - Calendario (GET)", "unabCalendar0001")
     auth_chain(wf, 0, 300, "Webhook calendar", "GET", "calendar", allow_student_id=True)
-    sheets_read(wf, "Leer calendario (Sheets)", (880, 200), alwaysOutputData=True, onError="continueRegularOutput")
+    calendar_read(wf, "Leer calendario (BD)", (880, 200), alwaysOutputData=True, onError="continueRegularOutput")
     if_node(wf, "¿Calendario disponible?", "$json.error", "string", "empty", (990, 200))
     code(wf, "Formatear eventos", "return [{ json: { events: calendarEvents($input.all().map((i) => i.json)) } }];",
          (1100, 200))
     respond(wf, "Responder eventos", "{ events: $json.events }", 200, (1320, 200))
-    wf.link("¿Sesión válida?", "Leer calendario (Sheets)", 0)
-    wf.link("Leer calendario (Sheets)", "¿Calendario disponible?")
+    wf.link("¿Sesión válida?", "Leer calendario (BD)", 0)
+    wf.link("Leer calendario (BD)", "¿Calendario disponible?")
     wf.link("¿Calendario disponible?", "Formatear eventos", 0)
     wf.link("¿Calendario disponible?", "Responder 503 (BD)", 1)
     wf.link("Formatear eventos", "Responder eventos")
@@ -411,7 +470,7 @@ def build_push() -> dict:
     wf = WF("UNAB Chatbot - Notificaciones Push (cada hora)", "unabPushNotif001")
     wf.add("Cada hora", "n8n-nodes-base.scheduleTrigger", 1.2,
            {"rule": {"interval": [{"field": "hours", "hoursInterval": 1}]}}, (0, 300))
-    sheets_read(wf, "Leer calendario (Sheets)", (220, 300), alwaysOutputData=True)
+    calendar_read(wf, "Leer calendario (BD)", (220, 300), alwaysOutputData=True)
     code(wf, "Eventos en ventana 48h", """
 const events = eventsInWindow(calendarEvents($input.all().map((i) => i.json)), new Date(), 48);
 return [{ json: { events_json: JSON.stringify(events), count: events.length } }];
@@ -433,8 +492,8 @@ return [{ json: { events_json: JSON.stringify(events), count: events.length } }]
 for (const i of $input.all()) console.error('[push] Error enviando FCM', JSON.stringify(i.json).slice(0, 300));
 return [{ json: { failed: $input.all().length } }];
 """, (1100, 400))
-    wf.link("Cada hora", "Leer calendario (Sheets)")
-    wf.link("Leer calendario (Sheets)", "Eventos en ventana 48h")
+    wf.link("Cada hora", "Leer calendario (BD)")
+    wf.link("Leer calendario (BD)", "Eventos en ventana 48h")
     wf.link("Eventos en ventana 48h", "Pendientes por notificar")
     wf.link("Pendientes por notificar", "Enviar FCM")
     wf.link("Enviar FCM", "Marcar como enviada", 0)
@@ -469,6 +528,150 @@ return [{ json: { student_id: String(b.student_id || '').trim().toUpperCase().sl
     return wf.dump()
 
 
+# ================================================================== 8. Plan académico (pantalla)
+def build_academic_plan() -> dict:
+    wf = WF("UNAB Chatbot - Plan Académico (GET)", "unabAcadPlan0001")
+    auth_chain(wf, 0, 300, "Webhook academic-plan", "GET", "academic-plan", allow_student_id=True)
+    http_json(wf, "Plan académico (MCP)", f"{MCP}/tools/get_academic_plan",
+              "{ session_id: $json.session_id }", (880, 200), timeout_ms=8000, onError="continueErrorOutput")
+    respond(wf, "Responder plan", "$json", 200, (1100, 200))
+    wf.link("¿Sesión válida?", "Plan académico (MCP)", 0)
+    wf.link("Plan académico (MCP)", "Responder plan", 0)
+    wf.link("Plan académico (MCP)", "Responder 503 (BD)", 1)
+    return wf.dump()
+
+
+# ================================================================== 9. Noticias (pantalla)
+def build_news() -> dict:
+    wf = WF("UNAB Chatbot - Noticias (GET)", "unabNewsList0001")
+    webhook(wf, "Webhook news", "GET", "news", (0, 300))
+    code(wf, "Leer filtros", """
+const q = $input.first().json.query || {};
+const cat = String(q.category || '').toLowerCase();
+return [{ json: {
+  category: ['educacion', 'tecnologia', 'ingenieria-sistemas', 'general'].includes(cat) ? cat : '',
+  limit: Math.min(50, Math.max(1, parseInt(q.limit, 10) || 20)),
+  today_only: q.today === '1' || q.today === 'true',
+} }];
+""", (220, 300))
+    http_json(wf, "Noticias (MCP)", f"{MCP}/tools/get_news", "$json", (440, 300), timeout_ms=8000,
+              onError="continueErrorOutput")
+    respond(wf, "Responder noticias", "{ news: $json.news || [] }", 200, (660, 200))
+    respond(wf, "Responder 503", ERR_UNAVAILABLE, 503, (660, 400))
+    wf.link("Webhook news", "Leer filtros")
+    wf.link("Leer filtros", "Noticias (MCP)")
+    wf.link("Noticias (MCP)", "Responder noticias", 0)
+    wf.link("Noticias (MCP)", "Responder 503", 1)
+    return wf.dump()
+
+
+# ================================================================== 10. Scraper automático (cron)
+def build_scraper() -> dict:
+    wf = WF("UNAB Chatbot - Scraper de noticias (cada 6 h)", "unabNewsScrape01")
+    wf.add("Cada 6 horas", "n8n-nodes-base.scheduleTrigger", 1.2,
+           {"rule": {"interval": [{"field": "hours", "hoursInterval": 6}]}}, (0, 300))
+    http_json(wf, "Ejecutar scraper (MCP)", f"{MCP}/tools/run_news_scraper", "{}", (220, 300), timeout_ms=120000)
+    code(wf, "Resumen", """
+const r = $input.first().json;
+console.log('[scraper]', JSON.stringify(r));
+return [{ json: r }];
+""", (440, 300))
+    wf.link("Cada 6 horas", "Ejecutar scraper (MCP)")
+    wf.link("Ejecutar scraper (MCP)", "Resumen")
+    return wf.dump()
+
+
+# ================================================================== 11. Agente IA (AI Agent + MCP + memoria)
+AGENT_SYSTEM = (
+    "Eres el agente académico de la Universidad Autónoma de Bucaramanga (UNAB). El estudiante tiene el ID "
+    "{{ $('Validar sesión').first().json.student_id }}.\n"
+    "REGLA OBLIGATORIA: antes de responder SIEMPRE llamas una herramienta; nunca pidas datos al estudiante.\n"
+    "- Matrícula, materias a inscribir, estado académico, promedio, proyección o fecha de grado, recomendaciones: "
+    "llama get_academic_plan con student_id=\"{{ $('Validar sesión').first().json.student_id }}\".\n"
+    "- Reglamento, plan de estudios, prerrequisitos, requisitos de grado: llama search_documents con la pregunta.\n"
+    "- Fechas: get_academic_calendar. Noticias: get_news (category: educacion, tecnologia o ingenieria-sistemas).\n"
+    "Luego responde en español, breve, en viñetas, con las cifras exactas de la herramienta. Aplica educación de "
+    "precisión (consejos basados en los datos del estudiante) y fomenta el autoaprendizaje y la investigación. "
+    "Solo atiendes temas académicos de la UNAB.")
+
+
+def build_agent() -> dict:
+    wf = WF("UNAB Chatbot - Agente IA (MCP)", "unabAgentMcp0001")
+    webhook(wf, "Webhook agent", "POST", "agent", (0, 300))
+    code(wf, "Preparar petición", PREP_JS, (220, 300))
+    postgres(wf, "Validar sesión",
+             "SELECT v.session_id, v.student_id FROM (SELECT 1) AS uno LEFT JOIN LATERAL "
+             "session_by_student(NULLIF($1, '')) v ON true",
+             "[ $json.student_id ]", (440, 300), onError="continueErrorOutput")
+    if_node(wf, "¿Estudiante válido?", "$json.session_id", "string", "notEmpty", (660, 300))
+    respond(wf, "Responder 401", ERR_SESSION_OR_ID, 401, (880, 520))
+    respond(wf, "Responder 503", ERR_UNAVAILABLE, 503, (660, 700))
+    M = "$('Preparar petición').first().json.message"
+    S = "$('Validar sesión').first().json.session_id"
+    http_json(wf, "Guardrails entrada", f"{GUARDRAILS}/validate-input", f"{{ session_id: {S}, message: {M} }}",
+              (880, 300), timeout_ms=GUARDRAILS_TIMEOUT_MS, onError="continueErrorOutput")
+    if_node(wf, "¿Entrada permitida?", "$json.allowed", "boolean", "true", (1100, 300))
+    respond(wf, "Responder mensaje rechazado",
+            REJECT_EXPR,
+            400, (1320, 780))
+    # Ítem limpio para el agente: el nodo MCP Client Tool envía los campos del ítem como argumentos
+    code(wf, "Entrada del agente", f"return [{{ json: {{ chatInput: {M} }} }}];", (1320, 300))
+    wf.add("Agente académico", "@n8n/n8n-nodes-langchain.agent", 3, {
+        "promptType": "define",
+        "text": "={{ $json.chatInput }}",
+        "options": {"systemMessage": "=" + AGENT_SYSTEM, "maxIterations": 4},
+    }, (1600, 300), onError="continueErrorOutput")
+    wf.add("Modelo LLM (Ollama)", "@n8n/n8n-nodes-langchain.lmChatOllama", 1, {
+        "model": "={{ $env.AGENT_LLM_MODEL || $env.LLM_MODEL || 'unab-llm' }}",
+        "options": {"temperature": 0.1, "numCtx": 8192, "numPredict": 350},
+    }, (1460, 560), credentials=CRED_OLLAMA)
+    wf.add("Memoria (PostgreSQL)", "@n8n/n8n-nodes-langchain.memoryPostgresChat", 1.3, {
+        "sessionIdType": "customKey",
+        "sessionKey": "={{ " + S + " }}",
+        "tableName": "n8n_chat_histories",
+        "contextWindowLength": 4,
+    }, (1640, 560), credentials=CRED_PG)
+    wf.add("Herramientas MCP", "@n8n/n8n-nodes-langchain.mcpClientTool", 1.2, {
+        "endpointUrl": f"{MCP}/mcp",
+        "serverTransport": "httpStreamable",
+        "include": "selected",
+        "includeTools": ["get_academic_plan", "search_documents", "get_academic_calendar", "get_news"],
+        "options": {"timeout": 60000},
+    }, (1820, 560))
+    http_json(wf, "Guardrails salida", f"{GUARDRAILS}/validate-output",
+              f"{{ session_id: {S}, response: $json.output || '' }}", (2000, 300),
+              timeout_ms=GUARDRAILS_TIMEOUT_MS, onError="continueErrorOutput")
+    code(wf, "Respuesta final", """
+const g = $input.first().json;
+const response = typeof g.sanitized_response === 'string' && g.sanitized_response ? g.sanitized_response : FALLBACK_RESPONSE;
+return [{ json: { response } }];
+""", (2220, 300))
+    respond(wf, "Responder OK", "{ response: $json.response, agent: true }", 200, (2440, 300))
+    respond(wf, "Responder error agente",
+            "{ error: 'El agente tardó demasiado o falló. Intenta de nuevo.' }", 504, (2000, 560))
+    wf.link("Webhook agent", "Preparar petición")
+    wf.link("Preparar petición", "Validar sesión")
+    wf.link("Validar sesión", "¿Estudiante válido?", 0)
+    wf.link("Validar sesión", "Responder 503", 1)
+    wf.link("¿Estudiante válido?", "Guardrails entrada", 0)
+    wf.link("¿Estudiante válido?", "Responder 401", 1)
+    wf.link("Guardrails entrada", "¿Entrada permitida?", 0)
+    wf.link("Guardrails entrada", "Responder 503", 1)
+    wf.link("¿Entrada permitida?", "Entrada del agente", 0)
+    wf.link("Entrada del agente", "Agente académico")
+    wf.link("¿Entrada permitida?", "Responder mensaje rechazado", 1)
+    wf.link("Agente académico", "Guardrails salida", 0)
+    wf.link("Agente académico", "Responder error agente", 1)
+    wf.link("Guardrails salida", "Respuesta final", 0)
+    wf.link("Guardrails salida", "Respuesta final", 1)
+    wf.link("Respuesta final", "Responder OK")
+    # Sub-nodos del agente (conexiones ai_*)
+    wf.connections["Modelo LLM (Ollama)"] = {"ai_languageModel": [[{"node": "Agente académico", "type": "ai_languageModel", "index": 0}]]}
+    wf.connections["Memoria (PostgreSQL)"] = {"ai_memory": [[{"node": "Agente académico", "type": "ai_memory", "index": 0}]]}
+    wf.connections["Herramientas MCP"] = {"ai_tool": [[{"node": "Agente académico", "type": "ai_tool", "index": 0}]]}
+    return wf.dump()
+
+
 BUILDERS = {
     "01_chat_ruteo.json": build_chat,
     "02_login.json": build_login,
@@ -477,10 +680,23 @@ BUILDERS = {
     "05_registrar_dispositivo.json": build_register_device,
     "06_notificaciones_push.json": build_push,
     "07_buscar_estudiante.json": build_student_lookup,
+    "08_plan_academico.json": build_academic_plan,
+    "09_noticias.json": build_news,
+    "10_scraper_noticias.json": build_scraper,
+    "11_agente_ia_mcp.json": build_agent,
 }
 
 
+def check_lib_syntax() -> None:
+    """Falla si lib.js no es JavaScript válido (un error rompería TODOS los nodos Code)."""
+    import shutil
+    import subprocess
+    if shutil.which("node"):
+        subprocess.run(["node", "--check", str(ROOT / "code" / "lib.js")], check=True)
+
+
 def main() -> None:
+    check_lib_syntax()
     OUT.mkdir(parents=True, exist_ok=True)
     for fname, fn in BUILDERS.items():
         (OUT / fname).write_text(json.dumps(fn(), ensure_ascii=False, indent=2), encoding="utf-8")

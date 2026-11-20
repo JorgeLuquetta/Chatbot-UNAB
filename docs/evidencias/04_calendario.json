@@ -1,0 +1,72 @@
+{
+  "request": {
+    "method": "GET",
+    "url": "http://localhost:9000/webhook/calendar?student_id=U00000010"
+  },
+  "status": 200,
+  "seconds": 0.216416,
+  "response": {
+    "events": [
+      {
+        "event_name": "Inicio de clases segundo semestre",
+        "event_date": "2026-07-27",
+        "description": "Inicio de actividades académicas del periodo 2026-2"
+      },
+      {
+        "event_name": "Último día para cancelar materias",
+        "event_date": "2026-10-02",
+        "description": "Cancelación sin nota a través del portal estudiantil"
+      },
+      {
+        "event_name": "Segundo corte de parciales",
+        "event_date": "2026-11-17",
+        "description": "Semana de evaluaciones del segundo corte"
+      },
+      {
+        "event_name": "Convocatoria semilleros de investigación",
+        "event_date": "2026-11-24",
+        "description": "Cierre de inscripciones a semilleros de investigación 2027-1"
+      },
+      {
+        "event_name": "Entrega de proyectos finales",
+        "event_date": "2026-11-27",
+        "description": "Fecha límite de entrega de proyectos de curso"
+      },
+      {
+        "event_name": "Exámenes finales",
+        "event_date": "2026-12-01",
+        "description": "Semana de exámenes finales"
+      },
+      {
+        "event_name": "Fin de clases",
+        "event_date": "2026-12-05",
+        "description": "Cierre del periodo académico 2026-2"
+      },
+      {
+        "event_name": "Publicación de notas definitivas",
+        "event_date": "2026-12-11",
+        "description": "Notas finales disponibles en el portal estudiantil"
+      },
+      {
+        "event_name": "Matrícula académica 2027-1 (inscripción de materias)",
+        "event_date": "2027-01-12",
+        "description": "Inscripción de materias según el plan sugerido y los prerrequisitos"
+      },
+      {
+        "event_name": "Matrícula financiera 2027-1",
+        "event_date": "2027-01-15",
+        "description": "Pago de matrícula ordinaria"
+      },
+      {
+        "event_name": "Inicio de clases 2027-1",
+        "event_date": "2027-01-25",
+        "description": "Inicio de actividades académicas del periodo 2027-1"
+      },
+      {
+        "event_name": "Ajustes de matrícula 2027-1",
+        "event_date": "2027-02-05",
+        "description": "Último día para adicionar o retirar materias sin recargo"
+      }
+    ]
+  }
+}

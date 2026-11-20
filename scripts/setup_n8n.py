@@ -48,6 +48,9 @@ def build_credentials(env: dict[str, str]) -> list[dict]:
         # Credencial "OpenAI API" para cualquier endpoint compatible. Ollama ignora la clave, pero n8n exige una.
         {"id": "unabOpenAiApi001", "name": "OpenAI API", "type": "openAiApi",
          "data": {"apiKey": env.get("OPENAI_API_KEY") or "ollama-local"}},
+        # Modelo del agente IA (workflow 11): Ollama local dentro de la red Docker
+        {"id": "unabOllamaApi001", "name": "Ollama local", "type": "ollamaApi",
+         "data": {"baseUrl": env.get("OLLAMA_BASE_URL") or "http://ollama:11434"}},
     ]
     sa_raw = env.get("GOOGLE_SA_JSON", "")
     if sa_raw.startswith("{") and "private_key" in sa_raw:
@@ -102,7 +105,7 @@ def main() -> None:
         if not (email and password):
             sys.exit("Para --activate define N8N_OWNER_EMAIL y N8N_OWNER_PASSWORD en .env (se crea el usuario dueño si no existe).")
         activate_via_rest(args.n8n_url, email, password)
-    print("\nListo. Abre http://<host>:9000 y revisa que los 6 workflows estén activos.")
+    print("\nListo. Abre http://<host>:9000 y revisa que los workflows estén activos.")
 
 
 def activate_via_rest(base: str, email: str, password: str) -> None:
@@ -115,9 +118,14 @@ def activate_via_rest(base: str, email: str, password: str) -> None:
     opener = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(jar))
 
     def call(method: str, path: str, body: dict | None = None):
+        headers = {"content-type": "application/json", "browser-id": "setup-n8n"}
+        # Con N8N_SECURE_COOKIE=true (n8n detrás de HTTPS) la cookie es "Secure" y urllib no la reenvía por
+        # http://localhost: se envía a mano.
+        if len(jar):
+            headers["cookie"] = "; ".join(f"{c.name}={c.value}" for c in jar)
         req = urllib.request.Request(base.rstrip("/") + "/rest" + path, method=method,
                                      data=json.dumps(body).encode() if body is not None else None,
-                                     headers={"content-type": "application/json", "browser-id": "setup-n8n"})
+                                     headers=headers)
         try:
             with opener.open(req, timeout=120) as r:
                 return r.status, json.loads(r.read() or b"{}")

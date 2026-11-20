@@ -11,6 +11,8 @@ services:
       - pg_data:/var/lib/postgresql/data
       - ./db/schema.sql:/docker-entrypoint-initdb.d/01_schema.sql:ro
       - ./db/seed.sql:/docker-entrypoint-initdb.d/02_seed.sql:ro
+      - ./db/seed_sintetico.sql:/docker-entrypoint-initdb.d/03_seed_sintetico.sql:ro
+      - ./db/academico.sql:/docker-entrypoint-initdb.d/04_academico.sql:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres -d chatbot"]
       interval: 5s

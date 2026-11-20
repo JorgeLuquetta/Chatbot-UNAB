@@ -37,7 +37,7 @@
       "typedRoutes": true
     },
     "extra": {
-      "apiUrl": "https://chatbot.traumado.top/webhook"
+      "apiUrl": "https://n8n.traumado.top/webhook"
     }
   }
 }

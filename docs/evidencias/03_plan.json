@@ -1,0 +1,181 @@
+{
+  "request": {
+    "method": "GET",
+    "url": "http://localhost:9000/webhook/academic-plan?student_id=U00000010"
+  },
+  "status": 200,
+  "seconds": 0.183793,
+  "response": {
+    "status": {
+      "gpa": 3.58,
+      "standing": "en observación",
+      "in_progress": [
+        {
+          "course_code": "ADM301",
+          "course_name": "Macroeconomía"
+        },
+        {
+          "course_code": "ADM302",
+          "course_name": "Estadística Empresarial"
+        },
+        {
+          "course_code": "ADM303",
+          "course_name": "Comportamiento Organizacional"
+        }
+      ],
+      "total_credits": 54,
+      "failed_courses": 2,
+      "approved_credits": 11,
+      "progress_percentage": 20.4
+    },
+    "student": {
+      "program": "Administración de Empresas",
+      "full_name": "Camila Rojas Quintero",
+      "student_id": "U00000010",
+      "current_semester": 3
+    },
+    "enrollment": {
+      "term": "2027-1",
+      "blocked": [
+        {
+          "semester": 5,
+          "course_code": "ADM501",
+          "course_name": "Finanzas Corporativas",
+          "missing_prerequisites": [
+            {
+              "status": "pending",
+              "course_code": "ADM401",
+              "course_name": "Mercadeo"
+            }
+          ]
+        },
+        {
+          "semester": 5,
+          "course_code": "ADM502",
+          "course_name": "Derecho Comercial",
+          "missing_prerequisites": [
+            {
+              "status": "pending",
+              "course_code": "ADM402",
+              "course_name": "Gestión del Talento Humano"
+            }
+          ]
+        },
+        {
+          "semester": 6,
+          "course_code": "ADM601",
+          "course_name": "Planeación Estratégica",
+          "missing_prerequisites": [
+            {
+              "status": "pending",
+              "course_code": "ADM501",
+              "course_name": "Finanzas Corporativas"
+            }
+          ]
+        },
+        {
+          "semester": 6,
+          "course_code": "ADM602",
+          "course_name": "Negocios Internacionales",
+          "missing_prerequisites": [
+            {
+              "status": "pending",
+              "course_code": "ADM502",
+              "course_name": "Derecho Comercial"
+            }
+          ]
+        },
+        {
+          "semester": 7,
+          "course_code": "ADM701",
+          "course_name": "Emprendimiento e Innovación",
+          "missing_prerequisites": [
+            {
+              "status": "pending",
+              "course_code": "ADM601",
+              "course_name": "Planeación Estratégica"
+            }
+          ]
+        }
+      ],
+      "courses": [
+        {
+          "repeat": true,
+          "credits": 3,
+          "semester": 2,
+          "conditional": false,
+          "course_code": "ADM201",
+          "course_name": "Microeconomía",
+          "conditional_on": []
+        },
+        {
+          "repeat": true,
+          "credits": 3,
+          "semester": 2,
+          "conditional": false,
+          "course_code": "ADM203",
+          "course_name": "Matemáticas Financieras",
+          "conditional_on": []
+        },
+        {
+          "repeat": false,
+          "credits": 3,
+          "semester": 4,
+          "conditional": true,
+          "course_code": "ADM401",
+          "course_name": "Mercadeo",
+          "conditional_on": [
+            {
+              "status": "in_progress",
+              "course_code": "ADM301",
+              "course_name": "Macroeconomía"
+            }
+          ]
+        },
+        {
+          "repeat": false,
+          "credits": 3,
+          "semester": 4,
+          "conditional": true,
+          "course_code": "ADM402",
+          "course_name": "Gestión del Talento Humano",
+          "conditional_on": [
+            {
+              "status": "in_progress",
+              "course_code": "ADM302",
+              "course_name": "Estadística Empresarial"
+            }
+          ]
+        }
+      ],
+      "credits": 12,
+      "max_credits": 18
+    },
+    "projection": {
+      "on_track": false,
+      "terms_remaining": 5,
+      "credits_per_term": 18,
+      "remaining_credits": 34,
+      "prerequisite_chain": 5,
+      "estimated_graduation_term": "2029-1"
+    },
+    "recommendations": [
+      {
+        "text": "Matricula primero las materias reprobadas (Microeconomía, Matemáticas Financieras): son prerrequisito de otras y afectan tu promedio. Pide tutoría en el Centro de Apoyo Estudiantil.",
+        "type": "matricula"
+      },
+      {
+        "text": "Tu nota más baja es 3.10 en Expresión Oral y Escrita. Refuerza esos fundamentos antes de las materias que dependen de ella (repasa con ejercicios y monitorías).",
+        "type": "precision"
+      },
+      {
+        "text": "Participa en un semillero de investigación de tu programa: desarrolla autonomía y suma para tu opción de grado.",
+        "type": "investigacion"
+      },
+      {
+        "text": "Crea hábitos de autoaprendizaje: 2 horas de estudio independiente por cada hora de clase, técnica Pomodoro y repaso espaciado.",
+        "type": "autoaprendizaje"
+      }
+    ]
+  }
+}

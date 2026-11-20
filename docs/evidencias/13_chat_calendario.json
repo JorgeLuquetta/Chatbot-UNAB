@@ -1,0 +1,16 @@
+{
+  "request": {
+    "method": "POST",
+    "url": "http://localhost:9000/webhook/chat",
+    "body": {
+      "student_id": "U00000010",
+      "message": "¿Cuándo es la matrícula académica?"
+    }
+  },
+  "status": 200,
+  "seconds": 214.247484,
+  "response": {
+    "response": "La matrícula académica para el semestre 2027-1 está programada para el día 12 de enero del 2027.",
+    "intent": "calendario"
+  }
+}

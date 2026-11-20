@@ -1,0 +1,18 @@
+{
+  "request": {
+    "method": "POST",
+    "url": "http://localhost:9000/webhook/student-lookup",
+    "body": {
+      "student_id": "U00000010"
+    }
+  },
+  "status": 200,
+  "seconds": 0.31368,
+  "response": {
+    "student_id": "U00000010",
+    "full_name": "Camila Rojas Quintero",
+    "program": "Administración de Empresas",
+    "current_semester": 3,
+    "progress_percentage": 23.5
+  }
+}

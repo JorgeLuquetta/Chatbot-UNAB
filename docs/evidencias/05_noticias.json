@@ -1,0 +1,57 @@
+{
+  "request": {
+    "method": "GET",
+    "url": "http://localhost:9000/webhook/news?category=ingenieria-sistemas&limit=5"
+  },
+  "status": 200,
+  "seconds": 0.145257,
+  "response": {
+    "news": [
+      {
+        "title": "Ingeniería de Sistemas UNAB refuerza su plan de estudios en modalidades presencial y virtual",
+        "summary": "Desarrollo de software, programación, ciberseguridad, ciencia de datos e inteligencia artificial son los principales campos de acción que actualmente abordan los profesionales de la ingeniería en Colombia. Ante la elevada solicitud de expertos que abarquen estos temas, el programa de Ingeniería de Sistemas de la Universidad UNAB ha cambiado su modalidad con Registro Único Calificado […]",
+        "source_url": "https://unab.edu.co/ingenieria-de-sistemas-unab-ahora-presencial-y-virtual/",
+        "source_name": "UNAB · Facultad de Ingeniería",
+        "category": "ingenieria-sistemas",
+        "image_url": "https://unab.edu.co/wp-content/uploads/2026/09/img-head-ing-sistemas-virtual.jpg",
+        "published_at": "2026-10-16"
+      },
+      {
+        "title": "Ingeniería en Ciberseguridad: nueva apuesta de pregrado de la UNAB",
+        "summary": "A partir del primer semestre académico de 2027, la Universidad UNAB ofrecerá un nuevo programa de pregrado profesional: Ingeniería en Ciberseguridad. Se trata de una iniciativa académica que nace de la necesidad de gestionar y evaluar soluciones de seguridad digital para proteger sistemas, infraestructuras y datos en entornos corporativos, industriales y gubernamentales. Este programa de […]",
+        "source_url": "https://unab.edu.co/ingenieria-en-ciberseguridad-nuevo-pregrado-unab/",
+        "source_name": "UNAB · Facultad de Ingeniería",
+        "category": "ingenieria-sistemas",
+        "image_url": "https://unab.edu.co/wp-content/uploads/2026/10/UNAB-Ing-en-Ciber-2.jpg",
+        "published_at": "2026-10-06"
+      },
+      {
+        "title": "Conoce el videojuego que están creando en la UNAB",
+        "summary": "El programa de Ingeniería de Sistemas de la UNAB quiere crear un videojuego. Se trata de Chía: el equilibrio perdido, de la categoría hack and slash ambientado en la época de los Muiscas, con una narrativa inspirada en la cosmovisión, rituales y mitología.",
+        "source_url": "https://unab.edu.co/conoce-el-videojuego-que-estan-creando-en-la-unab/",
+        "source_name": "UNAB · Investigación",
+        "category": "ingenieria-sistemas",
+        "image_url": "https://unab.edu.co/wp-content/uploads/2026/09/Chia-El-Equilibrio-Perdido.jpg",
+        "published_at": "2026-09-25"
+      },
+      {
+        "title": "Tres revistas UNAB fueron categorizadas en Publindex",
+        "summary": "En la más reciente medición del Índice Bibliográfico Nacional – Publindex, la Universidad UNAB destaca por la categorización de sus revistas MedUNAB, Reflexión Política y la Revista Colombiana de Computación, en categoría C.  Este índice es un sistema de indexación y resumen que valida los criterios del proceso de gestión editorial, visibilidad e impacto de […]",
+        "source_url": "https://unab.edu.co/tres-revistas-unab-fueron-categorizadas-en-publindex/",
+        "source_name": "UNAB · Investigación",
+        "category": "ingenieria-sistemas",
+        "image_url": "https://unab.edu.co/wp-content/uploads/2026/08/WWW_Revistas.jpg",
+        "published_at": "2026-08-13"
+      },
+      {
+        "title": "Una alternativa para ayudar a convertir la matriz energética en Colombia",
+        "summary": "¿Por estos días percibe más calor de lo habitual? Según el Instituto de Hidrología, Meteorología y Estudios Ambientales (Ideam), es posible que Colombia se enfrente al fenómeno de El Niño, el cual aumenta gradualmente hacia el segundo semestre de 2026. Esto impacta directamente en la matriz energética porque, por ejemplo, las hidroeléctricas representan el consumo […]",
+        "source_url": "https://unab.edu.co/se-puede-convertir-matriz-energetica-de-colombia/",
+        "source_name": "UNAB · Investigación",
+        "category": "ingenieria-sistemas",
+        "image_url": "https://unab.edu.co/wp-content/uploads/2026/07/Matriz-energetica-UNAB-1-1.jpg",
+        "published_at": "2026-07-06"
+      }
+    ]
+  }
+}

@@ -6,6 +6,8 @@ __pycache__/
 .venv/
 data/ccd/*
 !data/ccd/.gitkeep
+# Documentos de referencia del RAG (los PDF/DOCX oficiales que agregues siguen ignorados)
+!data/ccd/*.md
 
 # Android
 android/.gradle/

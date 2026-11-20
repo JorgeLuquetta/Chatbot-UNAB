@@ -1,0 +1,16 @@
+{
+  "request": {
+    "method": "POST",
+    "url": "http://localhost:9000/webhook/chat",
+    "body": {
+      "student_id": "U00000010",
+      "message": "¿Cuál es mi estado académico?"
+    }
+  },
+  "status": 200,
+  "seconds": 102.876152,
+  "response": {
+    "response": "Tu estado académico actual es el de promedio ponderado 3.58 y tienes una situación en observación debido a la falta de aprobaciones en las materias reprobadas: Microeconomía (3 cr, repetir) y Matemáticas Financieras (3 cr, repetir).",
+    "intent": "plan-academico"
+  }
+}

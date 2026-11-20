@@ -1,0 +1,16 @@
+{
+  "request": {
+    "method": "POST",
+    "url": "http://localhost:9000/webhook/chat",
+    "body": {
+      "student_id": "U00000010",
+      "message": "Envíame las noticias de tecnología al correo"
+    }
+  },
+  "status": 200,
+  "seconds": 3.016702,
+  "response": {
+    "response": "Te envío las noticias a **unab.u00000010@yopmail.com**. ¿Es correcto?\n\n• Responde **sí** para enviarlo.\n• Escribe **otro correo** para actualizarlo y enviarlo ahí.\n• Responde **no** para cancelar.",
+    "intent": "correo"
+  }
+}

@@ -1,0 +1,13 @@
+{
+  "request": {
+    "method": "POST",
+    "url": "http://localhost:9000/webhook/agent",
+    "body": {
+      "student_id": "U00000010",
+      "message": "¿Qué materias me recomiendas matricular y cuándo me graduaría?"
+    }
+  },
+  "status": 0,
+  "seconds": 300.001572,
+  "response": ""
+}

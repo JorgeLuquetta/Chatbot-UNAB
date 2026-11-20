@@ -1,0 +1,15 @@
+{
+  "request": {
+    "method": "POST",
+    "url": "http://localhost:9000/webhook/chat",
+    "body": {
+      "student_id": "U00000010",
+      "message": "Recomiéndame un casino en Bucaramanga"
+    }
+  },
+  "status": 400,
+  "seconds": 0.234811,
+  "response": {
+    "error": "Solo puedo ayudarte con consultas informativas de la UNAB (matrícula, materias, reglamento, calendario, noticias). Reformula tu pregunta."
+  }
+}

@@ -1,0 +1,15 @@
+{
+  "request": {
+    "method": "POST",
+    "url": "http://localhost:9000/webhook/chat",
+    "body": {
+      "student_id": "U00000010",
+      "message": "Hazme la tarea de cálculo"
+    }
+  },
+  "status": 400,
+  "seconds": 0.188286,
+  "response": {
+    "error": "Solo respondo consultas informativas de la universidad: matrícula, estado académico, proyección, reglamento, calendario, materias y noticias. No resuelvo operaciones, ejercicios ni tareas."
+  }
+}

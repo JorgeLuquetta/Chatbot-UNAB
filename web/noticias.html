@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Noticias UNAB</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700;800&family=Fredoka:wght@500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="comun.css">
+<style>
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 300px), 1fr)); gap: 16px; }
+  .news { display: flex; flex-direction: column; overflow: hidden; text-decoration: none; color: inherit; transition: transform .15s; }
+  .news:hover { transform: translateY(-3px); }
+  .pic { aspect-ratio: 16 / 9; background: var(--chip); display: grid; place-items: center; font-size: 40px; overflow: hidden; }
+  .pic img { width: 100%; height: 100%; object-fit: cover; display: block; }
+  .body { padding: 14px 16px 16px; display: flex; flex-direction: column; gap: 6px; }
+  .meta { font-size: 12px; font-weight: 700; color: var(--muted); display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+  .cat { color: var(--brand); border: 1px solid var(--brand); border-radius: 6px; padding: 0 6px; }
+  .title { font-weight: 800; font-size: 16px; line-height: 1.3; }
+  .sum { font-size: 14px; color: var(--muted); display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+</style>
+</head>
+<body>
+<div class="blobs" aria-hidden="true"><span></span><span></span><span></span></div>
+<main>
+  <h1>Noticias de la UNAB</h1>
+  <p class="lead">Educación, tecnología e ingeniería de sistemas, tomadas del sitio de la UNAB. Las recoge el scraper
+    cada 6 horas, con imagen, fuente y fecha. Desde el chat puedes pedir: <em>envíame las noticias de tecnología al correo</em>.</p>
+  <div class="chips" id="chips"></div>
+  <div class="grid" id="list"><div class="msg">Cargando noticias…</div></div>
+</main>
+<script src="home.js"></script>
+<script>
+const CATS = [["", "Todas"], ["ingenieria-sistemas", "Ing. de Sistemas"], ["tecnologia", "Tecnología"], ["educacion", "Educación"]];
+const LABEL = { "ingenieria-sistemas": "Ing. de Sistemas", tecnologia: "Tecnología", educacion: "Educación", general: "General" };
+const ICON = { "ingenieria-sistemas": "💻", tecnologia: "🤖", educacion: "🎓", general: "📰" };
+const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
+const fmt = (d) => { const x = new Date(d + "T12:00:00-05:00"); return isNaN(x) ? d : x.toLocaleDateString("es-CO", { day: "numeric", month: "short", year: "numeric" }); };
+let cat = "";
+function chips() {
+  document.getElementById("chips").innerHTML = CATS.map(([k, l]) =>
+    `<button class="chip" type="button" data-k="${k}" aria-pressed="${k === cat}">${l}</button>`).join("");
+  document.querySelectorAll(".chip").forEach((b) => b.onclick = () => { cat = b.dataset.k; chips(); load(); });
+}
+async function load() {
+  const list = document.getElementById("list");
+  list.innerHTML = '<div class="msg">Cargando noticias…</div>';
+  try {
+    const r = await fetch(`api/news?limit=30${cat ? "&category=" + cat : ""}`);
+    const { news } = await r.json();
+    if (!news || !news.length) { list.innerHTML = '<div class="msg">No hay noticias en esta categoría.</div>'; return; }
+    list.innerHTML = news.map((n) => `
+      <a class="news glass" href="${esc(n.source_url)}" target="_blank" rel="noopener">
+        <div class="pic">${n.image_url ? `<img src="${esc(n.image_url)}" alt="" loading="lazy" referrerpolicy="no-referrer" onerror="this.replaceWith(document.createTextNode('${ICON[n.category] || "📰"}'))">` : (ICON[n.category] || "📰")}</div>
+        <div class="body">
+          <div class="meta"><span class="cat">${esc(LABEL[n.category] || n.category)}</span><span>${esc(n.source_name)}</span><span>· ${esc(fmt(n.published_at))}</span></div>
+          <div class="title">${esc(n.title)}</div>
+          ${n.summary && n.summary !== n.title ? `<div class="sum">${esc(n.summary)}</div>` : ""}
+        </div>
+      </a>`).join("");
+  } catch (e) {
+    list.innerHTML = '<div class="msg">No pude cargar las noticias. Intenta de nuevo en un momento.</div>';
+  }
+}
+chips(); load();
+</script>
+</body>
+</html>

@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Plan académico UNAB</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700;800&family=Fredoka:wght@500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="comun.css">
+<style>
+  form { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 20px; }
+  input { flex: 1 1 220px; min-width: 0; font: 700 16px Nunito, sans-serif; padding: 12px 16px; border-radius: 14px;
+          border: 1.5px solid var(--line); background: var(--glass); color: var(--text); }
+  button.go { font: 800 15px Nunito, sans-serif; padding: 12px 20px; border-radius: 14px; border: 0; background: var(--brand); color: var(--bg); cursor: pointer; }
+  .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 320px), 1fr)); gap: 16px; }
+  .card { padding: 18px; }
+  .card h2 { margin: 0 0 10px; font-size: 18px; font-weight: 800; }
+  .kpis { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+  .kpi b { display: block; font-size: 24px; font-weight: 800; color: var(--brand); font-variant-numeric: tabular-nums; }
+  .kpi span { font-size: 12px; color: var(--muted); }
+  .badge { display: inline-block; font-weight: 800; font-size: 13px; padding: 3px 10px; border-radius: 999px; background: var(--chip); margin-top: 10px; }
+  ul { margin: 0; padding-left: 18px; } li { margin: 6px 0; line-height: 1.4; }
+  .row { display: flex; justify-content: space-between; gap: 10px; padding: 8px 0; border-top: 1px solid var(--line); font-size: 14px; }
+  .row:first-of-type { border-top: 0; }
+  .tag { font-size: 12px; font-weight: 700; color: var(--muted); }
+</style>
+</head>
+<body>
+<div class="blobs" aria-hidden="true"><span></span><span></span><span></span></div>
+<main>
+  <h1>Plan académico</h1>
+  <p class="lead">Estado académico, matrícula sugerida, proyección de grado y recomendaciones calculadas con los datos del
+    estudiante (prerrequisitos, créditos y notas).</p>
+  <form id="f"><input id="sid" placeholder="ID de estudiante, p. ej. U00000010" aria-label="ID de estudiante" maxlength="20" required>
+    <button class="go" type="submit">Ver plan</button></form>
+  <div id="out"></div>
+</main>
+<script src="home.js"></script>
+<script>
+const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
+const COLOR = { "excelencia": "var(--ok)", "normal": "var(--ok)", "en observación": "var(--warn)", "prueba académica": "var(--bad)" };
+async function show(id) {
+  const out = document.getElementById("out");
+  out.innerHTML = '<div class="msg">Calculando…</div>';
+  try {
+    const r = await fetch(`api/plan?student_id=${encodeURIComponent(id)}`);
+    if (r.status === 401 || r.status === 404) { out.innerHTML = '<div class="msg">No encontramos ese ID de estudiante.</div>'; return; }
+    const p = await r.json();
+    const st = p.status, en = p.enrollment, pr = p.projection;
+    out.innerHTML = `
+      <div class="cards">
+        <section class="card glass"><h2>${esc(p.student.full_name)}</h2>
+          <div class="muted">${esc(p.student.program)} · semestre ${p.student.current_semester}</div>
+          <div class="kpis" style="margin-top:12px">
+            <div class="kpi"><b>${st.gpa ?? "—"}</b><span>promedio ponderado</span></div>
+            <div class="kpi"><b>${Math.round(st.progress_percentage)}%</b><span>${st.approved_credits} de ${st.total_credits} créditos</span></div>
+            <div class="kpi"><b>${st.failed_courses}</b><span>reprobadas por repetir</span></div>
+          </div>
+          <span class="badge" style="color:${COLOR[st.standing] || "inherit"}">Situación: ${esc(st.standing)}</span>
+        </section>
+        <section class="card glass"><h2>Proyección de grado</h2>
+          <div class="kpis">
+            <div class="kpi"><b>${esc(pr.estimated_graduation_term)}</b><span>periodo estimado</span></div>
+            <div class="kpi"><b>${pr.terms_remaining}</b><span>periodos restantes</span></div>
+            <div class="kpi"><b>${pr.remaining_credits}</b><span>créditos por aprobar</span></div>
+          </div>
+          <p style="color:${pr.on_track ? "var(--ok)" : "var(--warn)"};font-weight:700">${pr.on_track ? "Va al día con el plan de estudios." : "Tiene atrasos: priorizar reprobadas y prerrequisitos."}</p>
+        </section>
+        <section class="card glass"><h2>Matrícula sugerida ${esc(en.term)}</h2>
+          <div class="muted" style="margin-bottom:6px">${en.credits} de ${en.max_credits} créditos permitidos</div>
+          ${en.courses.map((c) => `<div class="row"><span><b>${esc(c.course_code)}</b> ${esc(c.course_name)}<br>
+            <span class="tag">${c.credits} créditos${c.repeat ? " · repetir" : ""}${c.conditional ? " · si aprueba " + esc(c.conditional_on.map((x) => x.course_name).join(" y ")) : ""}</span></span>
+            <span>${c.repeat ? "↻" : "＋"}</span></div>`).join("") || '<div class="muted">No hay materias disponibles.</div>'}
+          ${en.blocked.length ? `<p class="tag" style="margin-top:10px">Bloqueadas: ${en.blocked.slice(0, 3).map((b) => esc(b.course_name) + " (falta " + esc(b.missing_prerequisites.map((m) => m.course_name).join(", ")) + ")").join("; ")}</p>` : ""}
+        </section>
+        <section class="card glass"><h2>Recomendaciones</h2>
+          <ul>${p.recommendations.map((x) => `<li>${esc(x.text)}</li>`).join("")}</ul>
+        </section>
+      </div>`;
+  } catch (e) {
+    out.innerHTML = '<div class="msg">No pude calcular el plan. Intenta de nuevo en un momento.</div>';
+  }
+}
+document.getElementById("f").onsubmit = (e) => { e.preventDefault(); const v = document.getElementById("sid").value.trim().toUpperCase(); if (v) { history.replaceState(null, "", "?id=" + v); show(v); } };
+const q = new URLSearchParams(location.search).get("id");
+if (q) { document.getElementById("sid").value = q; show(q.toUpperCase()); }
+</script>
+</body>
+</html>

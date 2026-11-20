@@ -1,21 +1,49 @@
 {
-  "_comentario": "Fuentes de noticias UNAB (sitio WordPress/Divi, verificado 2026-11-17). Cada noticia es un article.et_pb_post con h2.entry-title, span.published ('Nov 17, 2026') y .post-content-inner. Si el sitio cambia, inspecciona con F12 y ajusta los selectores.",
+  "_comentario": "Solo fuentes de la UNAB. type=html: páginas de noticias del sitio (WordPress/Divi, verificado 2026-11-19: article.et_pb_post con h2.entry-title, span.published, .post-content-inner e imagen). type=rss: feeds de categorías del sitio (las etiquetas de cada noticia se usan para clasificarla; la imagen se toma del og:image de la página). Si el sitio cambia, inspecciona con F12 y ajusta los selectores.",
   "sources": [
     {
+      "name": "UNAB",
       "url": "https://www.unab.edu.co/noticias",
       "item_selector": "article.et_pb_post",
       "title_selector": "h2.entry-title",
       "date_selector": "span.published",
       "summary_selector": ".post-content-inner p, .post-content-inner",
-      "link_selector": "h2.entry-title a[href]"
+      "link_selector": "h2.entry-title a[href]",
+      "default_category": "educacion"
     },
     {
+      "name": "UNAB · Educación Continua",
       "url": "https://unab.edu.co/category/educacion-continua/",
       "item_selector": "article.et_pb_post",
       "title_selector": "h2.entry-title",
       "date_selector": "span.published",
       "summary_selector": ".post-content-inner p, .post-content-inner",
-      "link_selector": "h2.entry-title a[href]"
+      "link_selector": "h2.entry-title a[href]",
+      "default_category": "educacion"
+    },
+    {
+      "name": "UNAB · Actualidad institucional",
+      "type": "rss",
+      "url": "https://unab.edu.co/category/actualidad-institucional/feed/",
+      "default_category": "educacion"
+    },
+    {
+      "name": "UNAB · Investigación",
+      "type": "rss",
+      "url": "https://unab.edu.co/category/investigacion/feed/",
+      "default_category": "educacion"
+    },
+    {
+      "name": "UNAB · Facultad de Ingeniería",
+      "type": "rss",
+      "url": "https://unab.edu.co/category/facultad-de-ingenieria/feed/",
+      "default_category": "tecnologia"
+    },
+    {
+      "name": "UNAB · Ingeniería e innovación",
+      "type": "rss",
+      "url": "https://unab.edu.co/category/ingenieria/feed/",
+      "default_category": "tecnologia"
     }
   ]
 }

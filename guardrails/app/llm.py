@@ -25,19 +25,28 @@ INPUT_PROMPT = (
 )
 OUTPUT_PROMPT = (
     "Eres un revisor de un chatbot académico de la Universidad UNAB. Decide si la RESPUESTA trata temas "
-    "universitarios (normas, cursos, notas, calendario, trámites, noticias o servicios de la universidad, "
-    "orientación académica). Responde solo una palabra: ACADEMICO o FUERA."
+    "universitarios (normas, cursos, notas, matrícula, calendario, trámites, noticias o servicios de la universidad, "
+    "noticias de educación, tecnología o ingeniería de sistemas, orientación académica, recomendaciones de estudio o "
+    "investigación). Responde solo una palabra: ACADEMICO o FUERA."
 )
 
 # Tema de la PREGUNTA (corta = ~1 s en CPU). Más fiable que juzgar la respuesta ya generada.
 TOPIC_PROMPT = (
     "Clasifica la PREGUNTA que un estudiante le hace al asistente académico de la universidad UNAB.\n"
-    "ACADEMICO: reglamento, materias, notas, avance, créditos, matrícula, grado, calendario, trámites, becas, "
-    "bienestar, noticias o servicios de la universidad, o un saludo.\n"
+    "ACADEMICO: reglamento, materias, notas, promedio, avance, créditos, matrícula, prerrequisitos, estado "
+    "académico, proyección o requisitos de grado, calendario, trámites, becas, bienestar, investigación, "
+    "semilleros, consejos de estudio o autoaprendizaje, noticias o servicios de la universidad, noticias de "
+    "educación, tecnología o ingeniería de sistemas, o un saludo.\n"
     "FUERA: cualquier otro tema (cocina, deportes, política, farándula, chistes, cultura general, programación "
-    "general, salud, tareas de otras cosas, etc.).\n"
+    "general, salud, etc.) y cualquier TAREA que no sea consultar información de la universidad: hacer "
+    "operaciones o cálculos, resolver ejercicios, hacer tareas o talleres, redactar textos, escribir código, "
+    "traducir o resumir textos.\n"
+    "PREGUNTA: ¿Cuánto es 15 por 4? -> FUERA\nPREGUNTA: Explícame cómo resolver una derivada -> FUERA\n"
+    "PREGUNTA: Envíame mi informe de avance al correo -> ACADEMICO\n"
     "Ejemplos:\nPREGUNTA: ¿Cuándo empiezan los parciales? -> ACADEMICO\nPREGUNTA: Dame una receta de arepas -> FUERA\n"
     "PREGUNTA: ¿Qué materias me faltan? -> ACADEMICO\nPREGUNTA: ¿Quién ganó el mundial? -> FUERA\n"
+    "PREGUNTA: ¿Qué noticias de tecnología hay hoy? -> ACADEMICO\nPREGUNTA: Recomiéndame un casino -> FUERA\n"
+    "PREGUNTA: Dame recomendaciones para mejorar mi promedio -> ACADEMICO\n"
     "Responde solo una palabra: ACADEMICO o FUERA."
 )
 

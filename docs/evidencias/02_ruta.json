@@ -1,0 +1,132 @@
+{
+  "request": {
+    "method": "GET",
+    "url": "http://localhost:9000/webhook/academic-route?student_id=U00000010"
+  },
+  "status": 200,
+  "seconds": 0.224288,
+  "response": {
+    "courses": [
+      {
+        "course_code": "ADM101",
+        "course_name": "Fundamentos de Administración",
+        "semester": 1,
+        "status": "completed",
+        "grade": 5
+      },
+      {
+        "course_code": "ADM102",
+        "course_name": "Matemáticas Básicas",
+        "semester": 1,
+        "status": "completed",
+        "grade": 4.9
+      },
+      {
+        "course_code": "ADM103",
+        "course_name": "Expresión Oral y Escrita",
+        "semester": 1,
+        "status": "completed",
+        "grade": 3.1
+      },
+      {
+        "course_code": "ADM201",
+        "course_name": "Microeconomía",
+        "semester": 2,
+        "status": "pending",
+        "grade": 2.1
+      },
+      {
+        "course_code": "ADM202",
+        "course_name": "Contabilidad Financiera",
+        "semester": 2,
+        "status": "completed",
+        "grade": 4.4
+      },
+      {
+        "course_code": "ADM203",
+        "course_name": "Matemáticas Financieras",
+        "semester": 2,
+        "status": "pending",
+        "grade": 1.8
+      },
+      {
+        "course_code": "ADM301",
+        "course_name": "Macroeconomía",
+        "semester": 3,
+        "status": "in_progress",
+        "grade": null
+      },
+      {
+        "course_code": "ADM302",
+        "course_name": "Estadística Empresarial",
+        "semester": 3,
+        "status": "in_progress",
+        "grade": null
+      },
+      {
+        "course_code": "ADM303",
+        "course_name": "Comportamiento Organizacional",
+        "semester": 3,
+        "status": "in_progress",
+        "grade": null
+      },
+      {
+        "course_code": "ADM401",
+        "course_name": "Mercadeo",
+        "semester": 4,
+        "status": "pending",
+        "grade": null
+      },
+      {
+        "course_code": "ADM402",
+        "course_name": "Gestión del Talento Humano",
+        "semester": 4,
+        "status": "pending",
+        "grade": null
+      },
+      {
+        "course_code": "ADM501",
+        "course_name": "Finanzas Corporativas",
+        "semester": 5,
+        "status": "pending",
+        "grade": null
+      },
+      {
+        "course_code": "ADM502",
+        "course_name": "Derecho Comercial",
+        "semester": 5,
+        "status": "pending",
+        "grade": null
+      },
+      {
+        "course_code": "ADM601",
+        "course_name": "Planeación Estratégica",
+        "semester": 6,
+        "status": "pending",
+        "grade": null
+      },
+      {
+        "course_code": "ADM602",
+        "course_name": "Negocios Internacionales",
+        "semester": 6,
+        "status": "pending",
+        "grade": null
+      },
+      {
+        "course_code": "ADM701",
+        "course_name": "Emprendimiento e Innovación",
+        "semester": 7,
+        "status": "pending",
+        "grade": null
+      },
+      {
+        "course_code": "ADM801",
+        "course_name": "Práctica Empresarial",
+        "semester": 8,
+        "status": "pending",
+        "grade": null
+      }
+    ],
+    "progress_percentage": 23.5
+  }
+}

@@ -7,7 +7,7 @@ services:
     image: n8nio/n8n:1.123.0
     restart: always
     ports:
-      - "9000:5678"
+      - "${N8N_BIND:-0.0.0.0}:9000:5678"   # n8n.traumado.top (127.0.0.1 = solo por el túnel)
     environment:
       - N8N_ENCRYPTION_KEY=${N8N_ENCRYPTION_KEY}
       - N8N_HOST=${N8N_HOST:-localhost}
@@ -29,6 +29,8 @@ services:
       # Cualquier endpoint compatible con OpenAI Chat Completions (por defecto Ollama local)
       - LLM_MODEL=${LLM_MODEL:-unab-llm}
       - LLM_API_URL=${LLM_API_URL:-http://ollama:11434/v1/chat/completions}
+      # Modelo del agente IA con herramientas MCP (workflow 11); vacío = LLM_MODEL
+      - AGENT_LLM_MODEL=${AGENT_LLM_MODEL:-}
       # Ajustes de velocidad para un LLM en CPU: historial enviado al LLM y largo máximo de la respuesta
       - LLM_HISTORY_MESSAGES=${LLM_HISTORY_MESSAGES:-2}
       - LLM_MAX_TOKENS=${LLM_MAX_TOKENS:-130}
@@ -61,6 +63,16 @@ services:
       - OPENAI_API_KEY=${OPENAI_API_KEY}
       - EMBEDDING_MODEL=${EMBEDDING_MODEL:-text-embedding-3-small}
       - CCD_DATA_DIR=/data/ccd
+      # El scraper solo guarda noticias de estos dominios (separados por coma)
+      - NEWS_ALLOWED_DOMAINS=${NEWS_ALLOWED_DOMAINS:-unab.edu.co}
+      # Correo (envío de noticias e informes). Sin SMTP_HOST se usa Mailpit (bandeja local de prueba).
+      # Brevo: SMTP_HOST=smtp-relay.brevo.com SMTP_PORT=587 SMTP_USER=<login SMTP> SMTP_PASSWORD=<clave SMTP>
+      - SMTP_HOST=${SMTP_HOST:-mailpit}
+      - SMTP_PORT=${SMTP_PORT:-1025}
+      - SMTP_USER=${SMTP_USER:-}
+      - SMTP_PASSWORD=${SMTP_PASSWORD:-}
+      - SMTP_FROM=${SMTP_FROM:-Asistente UNAB <asistente@chatbot-unab.local>}
+      - SMTP_STARTTLS=${SMTP_STARTTLS:-}
     volumes:
       - ./data/ccd:/data/ccd:ro
       - ./mcp-server/sources.json:/app/sources.json:ro
@@ -97,9 +109,9 @@ services:
     restart: always
     environment:
       - OLLAMA_KEEP_ALIVE=-1          # modelos siempre cargados (evita 10-60 s de carga por consulta)
-      - OLLAMA_MAX_LOADED_MODELS=2    # chat + embeddings
+      - OLLAMA_MAX_LOADED_MODELS=${OLLAMA_MAX_LOADED_MODELS:-2}    # chat + embeddings (3 si el agente usa otro modelo)
       - OLLAMA_NUM_PARALLEL=1
-      - OLLAMA_CONTEXT_LENGTH=2048     # los prompts recortados caben en 2048 (menos RAM y más rápido)
+      - OLLAMA_CONTEXT_LENGTH=${OLLAMA_CONTEXT_LENGTH:-2048}   # 2048 basta para el chat; el agente con herramientas MCP necesita 8192
       - OLLAMA_FLASH_ATTENTION=1
       - OLLAMA_KV_CACHE_TYPE=q8_0      # caché de atención comprimida (menos RAM)
     volumes:
@@ -110,7 +122,8 @@ services:
       - backend
 
   # Descarga los modelos la primera vez (luego termina). Idempotente.
-  # Crea "unab-llm" = qwen2.5:1.5b usando todos los hilos de la CPU (Ollama usa solo los núcleos físicos).
+  # Crea "unab-llm" = qwen2.5:1.5b (chat) y "unab-agent" = qwen2.5:3b (agente con herramientas MCP)
+  # usando todos los hilos de la CPU (Ollama usa solo los núcleos físicos).
   ollama-pull:
     image: ollama/ollama:0.12.6
     restart: "no"
@@ -118,7 +131,7 @@ services:
       - OLLAMA_HOST=ollama:11434
     entrypoint: ["/bin/sh", "-c"]
     command:
-      - "sleep 3 && ollama pull ${LLM_BASE_MODEL:-qwen2.5:1.5b} && ollama pull ${OLLAMA_EMBED_MODEL:-granite-embedding:278m} && printf 'FROM ${LLM_BASE_MODEL:-qwen2.5:1.5b}\nPARAMETER num_thread ${LLM_NUM_THREAD:-2}\n' > /tmp/Modelfile && ollama create unab-llm -f /tmp/Modelfile && echo MODELOS_LISTOS"
+      - "sleep 3 && ollama pull ${LLM_BASE_MODEL:-qwen2.5:1.5b} && ollama pull ${OLLAMA_EMBED_MODEL:-granite-embedding:278m} && printf 'FROM ${LLM_BASE_MODEL:-qwen2.5:1.5b}\nPARAMETER num_thread ${LLM_NUM_THREAD:-2}\n' > /tmp/Modelfile && ollama create unab-llm -f /tmp/Modelfile && ollama pull ${AGENT_BASE_MODEL:-qwen2.5:3b} && printf 'FROM ${AGENT_BASE_MODEL:-qwen2.5:3b}\nPARAMETER num_thread ${LLM_NUM_THREAD:-2}\n' > /tmp/Modelfile2 && ollama create unab-agent -f /tmp/Modelfile2 && echo MODELOS_LISTOS"
     networks:
       - backend
     depends_on:
@@ -130,9 +143,10 @@ services:
     image: nginx:1.27-alpine
     restart: always
     ports:
-      - "127.0.0.1:9001:80"     # chat.traumado.top
-      - "127.0.0.1:9002:8080"   # app.traumado.top (QR)
-      - "127.0.0.1:8081:8081"   # expo.traumado.top (nginx delante de Metro)
+      - "${WEB_BIND:-127.0.0.1}:9001:80"     # chatbotia.traumado.top
+      - "${WEB_BIND:-127.0.0.1}:9002:8080"   # qrapp.traumado.top (QR)
+      - "${WEB_BIND:-127.0.0.1}:9003:9003"   # portal.traumado.top (inicio con todas las herramientas)
+      - "${WEB_BIND:-127.0.0.1}:8081:8081"   # expoapp.traumado.top (nginx delante de Metro)
     volumes:
       # Se monta la carpeta (no archivos sueltos) para que los cambios se vean sin recrear el contenedor
       - ./web:/usr/share/nginx/html:ro
@@ -142,8 +156,8 @@ services:
     networks:
       - backend
 
-  # Servidor de Expo (app móvil para Expo Go). Se publica por el túnel en expo.traumado.top
-  # (Service URL http://localhost:8081, a través de nginx). El QR aparece en app.traumado.top.
+  # Servidor de Expo (app móvil para Expo Go). Se publica por el túnel en expoapp.traumado.top
+  # (Service URL http://localhost:8081, a través de nginx). El QR aparece en qrapp.traumado.top.
   # node_modules vive en un volumen propio (Linux); la carpeta mobile/ del host no se toca.
   expo:
     image: node:22-bookworm-slim
@@ -154,8 +168,8 @@ services:
              (npm ci --no-audit --no-fund && cp package-lock.json node_modules/.lock-instalado);
              exec npx expo start --port 8081"
     environment:
-      - EXPO_PACKAGER_PROXY_URL=${EXPO_PUBLIC_URL:-https://expo.traumado.top}
-      - EXPO_PUBLIC_API_URL=${EXPO_API_URL:-https://chatbot.traumado.top/webhook}
+      - EXPO_PACKAGER_PROXY_URL=${EXPO_PUBLIC_URL:-https://expoapp.traumado.top}
+      - EXPO_PUBLIC_API_URL=${EXPO_API_URL:-https://n8n.traumado.top/webhook}
       - EXPO_NO_TELEMETRY=1
       - EXPO_OFFLINE=1
       - NODE_OPTIONS=--max-old-space-size=1536
@@ -166,11 +180,29 @@ services:
     networks:
       - backend
 
+  # Bandeja de correo de prueba (Mailpit). Recibe lo que envía el asistente cuando no hay SMTP externo.
+  # Su interfaz web se ve en el portal: portal.traumado.top/correo/
+  mailpit:
+    image: axllent/mailpit:v1.21
+    restart: always
+    environment:
+      - MP_WEBROOT=/correo/
+      - MP_MAX_MESSAGES=500
+      - MP_DATABASE=/data/mailpit.db
+    volumes:
+      - mailpit_data:/data
+    expose:
+      - "1025"
+      - "8025"
+    networks:
+      - backend
+
 networks:
   backend:
     driver: bridge
 
 volumes:
+  mailpit_data:
   expo_node_modules:
   n8n_data:
   ollama_models:

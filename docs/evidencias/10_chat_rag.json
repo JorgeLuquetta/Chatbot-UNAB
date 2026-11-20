@@ -1,0 +1,16 @@
+{
+  "request": {
+    "method": "POST",
+    "url": "http://localhost:9000/webhook/chat",
+    "body": {
+      "student_id": "U00000010",
+      "message": "¿Qué dice el reglamento sobre la habilitación?"
+    }
+  },
+  "status": 200,
+  "seconds": 218.369676,
+  "response": {
+    "response": "Según el reglamento, las materias teóricas con nota definitiva entre 2.0 y 2.9 se pueden habilitar una vez. La nota de la habilitación reemplaza la definitiva y, si se aprueba, la nota registrada es 3.0. Los proyectos de grado y prácticas no son habilitables.",
+    "intent": "consulta-general"
+  }
+}

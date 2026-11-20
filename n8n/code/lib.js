@@ -2,7 +2,7 @@
 // build_workflows.py inserta este archivo (hasta la marca de export) en cada nodo Code,
 // y tests/test_n8n_code.py las prueba con Node.js.
 
-const INTENT_LABELS = ['consulta-general', 'calendario', 'cursos-realizados', 'noticias'];
+const INTENT_LABELS = ['consulta-general', 'calendario', 'cursos-realizados', 'noticias', 'plan-academico', 'correo'];
 
 const FALLBACK_RESPONSE = 'Solo puedo ayudarte con temas académicos de la UNAB.';
 
@@ -21,6 +21,9 @@ const CLASSIFIER_PROMPT =
   '- calendario: fechas académicas (matrículas, parciales, inicio/fin de clases, festivos, plazos).\n' +
   '- cursos-realizados: el progreso personal del estudiante (cursos aprobados, pendientes, en curso, notas, avance).\n' +
   '- noticias: noticias, eventos o novedades recientes de la universidad.\n' +
+  '- plan-academico: matrícula (qué materias inscribir), estado académico (promedio, situación), proyección de grado ' +
+  'y recomendaciones personalizadas para tener éxito.\n' +
+  '- correo: pide que le ENVÍEN por correo noticias, su informe de avance o su informe de materias.\n' +
   'Responde solo con la etiqueta, sin explicación.';
 
 function stripAccents(s) {
@@ -42,12 +45,24 @@ function normalizeIntent(raw) {
 // (más rápido y determinista con un LLM pequeño en CPU). Devuelve null si hay duda → decide el LLM.
 const RULES = [
   ['cursos-realizados', [
-    /\b(mi|mis)\s+(avance|progreso|cursos?|materias?|asignaturas?|notas?|calificaciones|historial|promedio|creditos)\b/,
+    /\b(mi|mis)\s+(avance|progreso|cursos?|materias?|asignaturas?|notas?|calificaciones|historial|creditos)\b/,
     /\bhe\s+(aprobado|cursado|visto|reprobado|perdido|ganado)\b/,
     /\b(que|cuales|cuantas?|cuantos)\s+(cursos|materias|asignaturas|creditos)\s+(he|me\s+faltan?|tengo|llevo|debo)\b/,
     /\bme\s+faltan?\s+(cursos|materias|asignaturas|creditos|semestres)\b/,
   ]],
   ['noticias', [/\b(noticias?|novedades|convocatorias?)\b/]],
+  ['correo', [
+    /\b(envia\w*|manda\w*|reenvia\w*|remite\w*)\b.*\b(correo|e-?mail|mail|gmail|yopmail|bandeja)\b/,
+    /\b(al|a mi|por|por el)\s+(correo|e-?mail|mail)\b/,
+  ]],
+  ['plan-academico', [
+    /\b(matricul\w*|inscribir|inscribo|inscripcion de materias)\b.*\b(materias?|asignaturas?|cursos?|creditos|semestre|periodo)\b/,
+    /\b(que|cuales)\s+(materias|asignaturas|cursos)\s+(puedo|debo|deberia|me\s+recomiendas?)\b/,
+    /\b(proyeccion|proyectar|cuando\s+me\s+(graduo|voy\s+a\s+graduar)|en\s+cuant[oa]s?\s+(semestres|periodos))\b/,
+    /\b(estado|situacion|rendimiento)\s+academic[oa]\b/,
+    /\b(mi\s+promedio|prueba\s+academica|carga\s+maxima)\b/,
+    /\b(recomendaciones?|recomiendas?|recomiendame|consejos?|como\s+(mejorar|tener\s+exito|me\s+va))\b/,
+  ]],
   ['consulta-general', [
     /\b(reglamento|requisitos?|grado|graduarme|titulo|supletorios?|habilitaci\w*|reprob\w*|repruebo|sancion\w*|homologa\w*|transferencia|reintegro|insignia|competencias?)\b/,
   ]],
@@ -60,6 +75,12 @@ const RULES = [
 function ruleIntent(message) {
   const text = stripAccents(String(message || '')).toLowerCase();
   const hits = RULES.filter(([, patterns]) => patterns.some((p) => p.test(text))).map(([label]) => label);
+  // "Envíame las noticias al correo" también toca noticias: si pide un envío por correo, gana el correo
+  if (hits.includes('correo')) return 'correo';
+  // "¿qué materias debo matricular?" o "¿cuándo me gradúo?" también tocan cursos/reglamento: gana el plan
+  if (hits.includes('plan-academico') && hits.every((h) => ['plan-academico', 'cursos-realizados', 'consulta-general'].includes(h))) {
+    return 'plan-academico';
+  }
   return hits.length === 1 ? hits[0] : null; // ambiguo (0 o 2+ coincidencias) → LLM
 }
 
@@ -155,10 +176,72 @@ function coursesContext(record) {
 
 function newsContext(news) {
   const items = (Array.isArray(news) ? news : []).slice(0, 8);
-  return 'NOTICIAS RECIENTES DE LA UNAB (más recientes primero):\n' +
-    items.map((n) => `- [${String(n.published_at).slice(0, 10)}] ${n.title}: ${clip(n.summary, 200)} (${n.source_url})`).join('\n') +
+  return 'NOTICIAS RECIENTES (educación, tecnología e ingeniería de sistemas; más recientes primero):\n' +
+    items.map((n) => `- [${String(n.published_at).slice(0, 10)}] (${n.category || 'general'}, ${n.source_name || 'UNAB'}) ` +
+      `${n.title}: ${clip(n.summary, 160)}`).join('\n') +
     '\nResponde con las noticias de esta lista (título y fecha). Si la pregunta es general, presenta las 3 más ' +
     'recientes; si pregunta por un tema, las relacionadas con ese tema. No digas que no hay noticias.';
+}
+
+// Guía pedagógica: educación de precisión (decisiones con los datos del propio estudiante),
+// autoaprendizaje e investigación. Se usa en el prompt del plan académico.
+const PEDAGOGY =
+  'Eres un consejero académico. Aplica educación de precisión: basa cada consejo en los datos de ESTE estudiante ' +
+  '(promedio, materias reprobadas, nota más baja, créditos, prerrequisitos). Promueve el autoaprendizaje y la ' +
+  'investigación (semilleros, monitorías). Da pasos concretos y accionables, en viñetas cortas.';
+
+const STANDING_LABEL = {
+  'excelencia': 'excelencia académica', 'normal': 'normal', 'en observación': 'en observación',
+  'prueba académica': 'prueba académica', 'sin notas': 'sin notas todavía (primer semestre)',
+};
+
+// Resume el JSON de academic_plan() para el LLM (texto corto = respuesta más rápida en CPU).
+function planContext(plan) {
+  const p = plan || {};
+  const s = p.student || {}, st = p.status || {}, en = p.enrollment || {}, pr = p.projection || {};
+  const courses = (en.courses || []).map((c) =>
+    `- ${c.course_code} ${c.course_name} (${c.credits} cr${c.repeat ? ', repetir: reprobada' : ''}` +
+    `${c.conditional ? ', condicionada a aprobar ' + (c.conditional_on || []).map((x) => x.course_name).join(' y ') : ''})`);
+  const blocked = (en.blocked || []).slice(0, 3).map((b) =>
+    `- ${b.course_name}: falta ${(b.missing_prerequisites || []).map((m) => m.course_name).join(', ')}`);
+  const recs = (p.recommendations || []).map((r) => `- ${r.text}`);
+  return PEDAGOGY + '\n\n' +
+    `PLAN ACADÉMICO DE ${s.full_name || 'el estudiante'} (${s.program || ''}, semestre ${s.current_semester || '?'}):\n` +
+    `ESTADO ACADÉMICO: promedio ponderado ${st.gpa ?? 'sin notas'}; situación ${STANDING_LABEL[st.standing] || st.standing}; ` +
+    `${st.approved_credits || 0} de ${st.total_credits || 0} créditos aprobados (${st.progress_percentage || 0}%); ` +
+    `materias reprobadas: ${st.failed_courses || 0}.\n` +
+    `MATRÍCULA SUGERIDA ${en.term || ''} (${en.credits || 0} de máximo ${en.max_credits || 18} créditos):\n` +
+    (courses.join('\n') || '- (no hay materias disponibles para matricular)') + '\n' +
+    (blocked.length ? 'BLOQUEADAS POR PRERREQUISITOS:\n' + blocked.join('\n') + '\n' : '') +
+    `PROYECCIÓN: faltan ${pr.remaining_credits ?? '?'} créditos; ${pr.terms_remaining ?? '?'} periodos más; ` +
+    `grado estimado en ${pr.estimated_graduation_term || '?'}; ${pr.on_track ? 'va al día' : 'tiene atrasos'}.\n` +
+    'RECOMENDACIONES:\n' + (recs.join('\n') || '-') + '\n' +
+    'Responde SOLO lo que pregunta (matrícula, estado, proyección o recomendaciones) con estas cifras exactas.\n' +
+    'Si pregunta qué matricular, enumera TODAS las materias de la MATRÍCULA SUGERIDA (primero las que debe repetir).';
+}
+
+// Categoría de noticias pedida en el mensaje ('' = todas).
+function newsCategory(message) {
+  const t = stripAccents(String(message || '')).toLowerCase();
+  if (/\b(ingenieria de sistemas|software|programacion|sistemas)\b/.test(t)) return 'ingenieria-sistemas';
+  if (/\b(tecnolog\w*|inteligencia artificial|ia|digital|innovacion|ingenieria\w*)\b/.test(t)) return 'tecnologia';
+  if (/\b(educacion|educativ\w*|becas?|cursos?|diplomados?|posgrados?)\b/.test(t)) return 'educacion';
+  return '';
+}
+
+// Garantiza que una respuesta sobre matrícula liste TODAS las materias sugeridas: un LLM pequeño a veces
+// omite alguna. Si falta un código, agrega la lista exacta calculada en SQL (educación de precisión).
+function ensureEnrollment(response, plan, message) {
+  const text = stripAccents(String(message || '')).toLowerCase();
+  const courses = ((plan || {}).enrollment || {}).courses || [];
+  if (!/\b(matricul\w*|inscrib\w*)\b/.test(text) || courses.length === 0) return response;
+  const out = String(response || '');
+  if (courses.every((c) => out.includes(c.course_code) || out.includes(c.course_name))) return out;
+  const en = plan.enrollment;
+  const list = courses.map((c) => `- ${c.course_code} ${c.course_name} (${c.credits} créditos` +
+    (c.repeat ? ', repetir' : '') +
+    (c.conditional ? ', si apruebas ' + (c.conditional_on || []).map((x) => x.course_name).join(' y ') : '') + ')');
+  return `${out}\n\nMatrícula sugerida ${en.term} (${en.credits} de ${en.max_credits} créditos):\n${list.join('\n')}`;
 }
 
 function parseEventDate(value) {
@@ -192,7 +275,7 @@ function llmText(resp) {
 if (typeof module !== 'undefined') {
   module.exports = {
     INTENT_LABELS, FALLBACK_RESPONSE, CLASSIFIER_PROMPT, normalizeIntent, ruleIntent, bearerToken, historyMessages, clip,
-    buildMessages, ragContext, calendarEvents, calendarContext, coursesContext, newsContext,
+    buildMessages, ragContext, calendarEvents, calendarContext, coursesContext, newsContext, planContext, PEDAGOGY, newsCategory, ensureEnrollment,
     eventsInWindow, parseEventDate, llmText, normalizeEvent,
   };
 }

@@ -1,0 +1,144 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#f6f1ff">
+<title>Portal Chatbot UNAB</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700;800&family=Fredoka:wght@500;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #f6f1ff; --blob-1: #ffd6e8; --blob-2: #c9e8ff; --blob-3: #d4f5e4; --blob-4: #fff1c9;
+    --glass: rgba(255, 255, 255, .7); --glass-line: rgba(255, 255, 255, .9);
+    --text: #2e2645; --muted: #6f6789; --line: #e7defa; --brand: #6a4fd6;
+    --c1: #ffd6e8; --c2: #c9e8ff; --c3: #d4f5e4; --c4: #fff1c9; --c5: #e6dcff; --c6: #ffe1cf;
+    --shadow: 0 20px 60px -20px rgba(110, 80, 200, .35), 0 4px 16px -6px rgba(110, 80, 200, .18);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #17132a; --blob-1: #5a2f55; --blob-2: #24406a; --blob-3: #1f4f45; --blob-4: #5a4a24;
+      --glass: rgba(34, 28, 58, .7); --glass-line: rgba(255, 255, 255, .08);
+      --text: #efeaff; --muted: #b3aacf; --line: #3a3160; --brand: #c9b8ff;
+      --c1: #4a2846; --c2: #22385c; --c3: #1d443c; --c4: #4a3f20; --c5: #33295c; --c6: #4a3226;
+      --shadow: 0 20px 60px -20px rgba(0, 0, 0, .6), 0 4px 16px -6px rgba(0, 0, 0, .4);
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #17132a; --blob-1: #5a2f55; --blob-2: #24406a; --blob-3: #1f4f45; --blob-4: #5a4a24;
+    --glass: rgba(34, 28, 58, .7); --glass-line: rgba(255, 255, 255, .08);
+    --text: #efeaff; --muted: #b3aacf; --line: #3a3160; --brand: #c9b8ff;
+    --c1: #4a2846; --c2: #22385c; --c3: #1d443c; --c4: #4a3f20; --c5: #33295c; --c6: #4a3226;
+    --shadow: 0 20px 60px -20px rgba(0, 0, 0, .6), 0 4px 16px -6px rgba(0, 0, 0, .4);
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; min-height: 100vh; background: var(--bg); color: var(--text); font-family: Nunito, system-ui, sans-serif; overflow-x: hidden; }
+  .blobs { position: fixed; inset: 0; z-index: 0; pointer-events: none; overflow: hidden; }
+  .blobs span { position: absolute; border-radius: 50%; filter: blur(70px); opacity: .75; }
+  .blobs span:nth-child(1) { width: 420px; height: 420px; background: var(--blob-1); top: -120px; left: -80px; }
+  .blobs span:nth-child(2) { width: 380px; height: 380px; background: var(--blob-2); top: 20%; right: -120px; }
+  .blobs span:nth-child(3) { width: 360px; height: 360px; background: var(--blob-3); bottom: -120px; left: 20%; }
+  .blobs span:nth-child(4) { width: 260px; height: 260px; background: var(--blob-4); bottom: 10%; right: 10%; }
+  main { position: relative; z-index: 1; max-width: 1080px; margin: 0 auto; padding: 48px 16px 56px; }
+  .eyebrow { font-weight: 800; color: var(--brand); letter-spacing: .08em; text-transform: uppercase; font-size: 13px; }
+  h1 { font-family: Fredoka, Nunito, sans-serif; font-weight: 600; font-size: clamp(30px, 5vw, 46px); margin: 6px 0 10px; line-height: 1.1; }
+  .lead { color: var(--muted); font-size: 17px; max-width: 680px; margin: 0 0 28px; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 300px), 1fr)); gap: 16px; }
+  .card { display: flex; gap: 14px; align-items: flex-start; padding: 18px; border-radius: 20px; text-decoration: none; color: inherit;
+          background: var(--glass); border: 1px solid var(--glass-line); box-shadow: var(--shadow);
+          backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px); transition: transform .15s, box-shadow .15s; }
+  .card:hover { transform: translateY(-3px); }
+  .card:focus-visible { outline: 3px solid var(--brand); outline-offset: 3px; }
+  .ico { flex: none; width: 52px; height: 52px; border-radius: 16px; display: grid; place-items: center; font-size: 26px; }
+  .card h2 { margin: 0 0 4px; font-size: 18px; font-weight: 800; }
+  .card p { margin: 0; color: var(--muted); font-size: 14px; line-height: 1.45; }
+  .url { display: inline-block; margin-top: 8px; font-size: 12px; font-weight: 700; color: var(--brand); word-break: break-all; }
+  h3 { font-family: Fredoka, Nunito, sans-serif; font-weight: 600; font-size: 22px; margin: 40px 0 12px; }
+  .panel { background: var(--glass); border: 1px solid var(--glass-line); border-radius: 20px; padding: 6px 18px; box-shadow: var(--shadow);
+           backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px); overflow-x: auto; }
+  table { width: 100%; border-collapse: collapse; font-size: 14px; }
+  th, td { text-align: left; padding: 10px 8px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  tr:last-child td { border-bottom: 0; }
+  code { font-family: ui-monospace, Consolas, monospace; font-size: 13px; background: var(--line); padding: 1px 6px; border-radius: 6px; }
+  .ids { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+  .ids code { cursor: pointer; }
+  footer { margin-top: 36px; color: var(--muted); font-size: 13px; }
+</style>
+</head>
+<body>
+<div class="blobs" aria-hidden="true"><span></span><span></span><span></span><span></span></div>
+<main>
+  <div class="eyebrow">Ciencia de Datos · UNAB</div>
+  <h1>Asistente académico UNAB</h1>
+  <p class="lead">Todas las herramientas del proyecto en un solo lugar: el chat para estudiantes, la app móvil, el plan
+    académico, las noticias de la UNAB, la administración en n8n y la bandeja de correo de prueba.</p>
+
+  <div class="grid" id="tools"></div>
+
+  <h3>Estudiantes de prueba</h3>
+  <div class="panel">
+    <p style="margin:12px 0 4px">Escribe uno de estos ID en el chat, la app o el plan académico (datos sintéticos).
+      Cada uno tiene un correo de prueba <code>unab.&lt;id&gt;@yopmail.com</code>.</p>
+    <div class="ids" style="margin-bottom:14px">
+      <code title="Excelencia, Ing. de Sistemas">U00000001</code><code title="Normal, Ing. de Sistemas">U00000002</code>
+      <code title="En observación, 2 reprobadas">U00000010</code><code title="Primer semestre">U00000009</code>
+      <code title="9.º semestre">U00000020</code>
+    </div>
+  </div>
+
+  <h3>API (webhooks de n8n)</h3>
+  <div class="panel">
+    <table>
+      <thead><tr><th>Método</th><th>Ruta</th><th>Para qué</th></tr></thead>
+      <tbody id="api"></tbody>
+    </table>
+  </div>
+
+  <footer>Repositorio y documentación: <a href="https://github.com/JorgeLuquetta/Chatbot-UNAB" target="_blank" rel="noopener">GitHub · Chatbot-UNAB</a></footer>
+</main>
+<script>
+// Con dominio usa los subdominios del túnel; con IP, los puertos de la VM
+const h = location.hostname;
+const D = /traumado\.top$/.test(h);
+const base = (sub, port) => D ? `https://${sub}.traumado.top` : `${location.protocol}//${h}:${port}`;
+const N8N = base("n8n", 9000);
+const TOOLS = [
+  { ico: "💬", c: "--c5", t: "Chat web", d: "El asistente para estudiantes: matrícula, estado académico, proyección, reglamento, calendario, noticias y envíos por correo.", u: base("chatbotia", 9001) },
+  { ico: "📱", c: "--c2", t: "App móvil (Expo Go)", d: "Códigos QR para abrir la app Android en Expo Go y el chat web en el celular.", u: base("qrapp", 9002) },
+  { ico: "🎓", c: "--c3", t: "Mi plan académico", d: "Estado académico, matrícula sugerida, proyección de grado y recomendaciones de un estudiante.", u: "/plan" },
+  { ico: "📰", c: "--c4", t: "Noticias de la UNAB", d: "Educación, tecnología e ingeniería de sistemas del sitio de la UNAB, con imagen, fuente y fecha (scraper cada 6 h).", u: "/noticias" },
+  { ico: "⚙️", c: "--c1", t: "n8n (administración)", d: "Los 11 workflows: chat con ruteo, agente IA con MCP, webhooks, scraper y notificaciones.", u: N8N },
+  { ico: "✉️", c: "--c6", t: "Bandeja de correo de prueba", d: "Correos que envía el asistente cuando no hay SMTP externo (Mailpit).", u: "/correo/" },
+];
+document.getElementById("tools").innerHTML = TOOLS.map((x) => `
+  <a class="card" href="${x.u}" ${x.u.startsWith("http") ? 'target="_blank" rel="noopener"' : ""}>
+    <span class="ico" style="background:var(${x.c})" aria-hidden="true">${x.ico}</span>
+    <span><h2>${x.t}</h2><p>${x.d}</p><span class="url">${x.u.startsWith("/") ? location.host + x.u : x.u.replace(/^https?:\/\//, "")}</span></span>
+  </a>`).join("");
+
+const API = [
+  ["POST", "/webhook/chat", "Chat: { student_id, message } → { response, intent }"],
+  ["POST", "/webhook/agent", "Agente IA con herramientas MCP"],
+  ["GET", "/webhook/academic-plan?student_id=", "Matrícula, estado, proyección y recomendaciones"],
+  ["GET", "/webhook/academic-route?student_id=", "Materias por semestre"],
+  ["GET", "/webhook/news?category=", "Noticias (educacion, tecnologia, ingenieria-sistemas)"],
+  ["GET", "/webhook/calendar?student_id=", "Calendario académico"],
+  ["POST", "/webhook/student-lookup", "Buscar estudiante por ID"],
+  ["POST", "/webhook/login", "Login con contraseña (token)"],
+];
+document.getElementById("api").innerHTML = API.map(([m, p, d]) =>
+  `<tr><td><code>${m}</code></td><td><code>${N8N.replace(/^https?:\/\//, "")}${p}</code></td><td>${d}</td></tr>`).join("");
+
+// Clic en un ID: lo copia al portapapeles
+document.querySelectorAll(".ids code").forEach((c) => {
+  const id = c.textContent;
+  c.addEventListener("click", () => {
+    if (navigator.clipboard) navigator.clipboard.writeText(id).catch(() => {});
+    c.textContent = "copiado ✓";
+    setTimeout(() => (c.textContent = id), 900);
+  });
+});
+</script>
+</body>
+</html>

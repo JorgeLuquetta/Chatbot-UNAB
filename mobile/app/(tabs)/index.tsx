@@ -1,5 +1,6 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { useLocalSearchParams } from 'expo-router';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator, FlatList, KeyboardAvoidingView, Platform, Pressable, StyleSheet, Text, TextInput, View,
@@ -24,13 +25,18 @@ const INTENT_LABEL: Record<string, string> = {
   calendario: 'Calendario',
   'cursos-realizados': 'Mis cursos',
   noticias: 'Noticias',
+  'plan-academico': 'Mi plan académico',
+  correo: 'Correo',
 };
 
 const SUGGESTIONS = [
-  '¿Qué materias tengo pendientes?',
-  '¿Cuál es mi avance en la carrera?',
-  '¿Qué noticias hay en la universidad?',
-  '¿Cuándo son los exámenes finales?',
+  '¿Qué materias debo matricular el próximo semestre?',
+  '¿Cuál es mi estado académico?',
+  '¿Cuándo me voy a graduar?',
+  'Dame recomendaciones para tener éxito',
+  '¿Cuáles son los requisitos de grado?',
+  '¿Qué noticias de tecnología hay hoy?',
+  'Envíame mi informe de avance al correo',
 ];
 
 const newId = () => `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
@@ -80,6 +86,16 @@ export default function ChatScreen() {
     }
   }, [sending, session, signOut]);
 
+  // Pregunta enviada desde otra pantalla (p. ej. "Pregúntale al asistente" en Mi plan)
+  const { q } = useLocalSearchParams<{ q?: string }>();
+  const lastQ = useRef<string | undefined>(undefined);
+  useEffect(() => {
+    if (typeof q === 'string' && q && q !== lastQ.current) {
+      lastQ.current = q;
+      send(q);
+    }
+  }, [q, send]);
+
   const retry = (msg: Msg) => {
     if (!msg.retryOf) return;
     // Quita el error y la pregunta que lo causó; send() la vuelve a agregar
@@ -114,7 +130,7 @@ export default function ChatScreen() {
               )}
             </View>
             <Text style={{ color: t.muted, textAlign: 'center', marginBottom: 16 }}>
-              ¿En qué te ayudo? Pregúntame sobre el reglamento, tus materias, el calendario o las noticias de la UNAB.
+              ¿En qué te ayudo? Pregúntame qué matricular, tu estado académico, cuándo te gradúas, el reglamento, el calendario o las noticias.
             </Text>
             {SUGGESTIONS.map((s) => (
               <Pressable key={s} onPress={() => send(s)} style={[styles.chip, { borderColor: t.purple }]}>
@@ -147,7 +163,14 @@ export default function ChatScreen() {
               {item.intent && INTENT_LABEL[item.intent] && (
                 <Text style={[styles.tag, { color: t.warn }]}>{INTENT_LABEL[item.intent]}</Text>
               )}
-              <Text style={{ color: t.text, fontSize: 15, lineHeight: 21 }}>{item.text}</Text>
+              <Text style={{ color: t.text, fontSize: 15, lineHeight: 21 }}>
+                {/* Negritas **así** del asistente */}
+                {item.text.split(/(\*\*[^*]+\*\*)/).map((part, i) =>
+                  /^\*\*[^*]+\*\*$/.test(part)
+                    ? <Text key={i} style={{ fontWeight: '800' }}>{part.slice(2, -2)}</Text>
+                    : part.replace(/\*([^*
+]+)\*/g, '$1'))}
+              </Text>
             </View>
           );
         }}

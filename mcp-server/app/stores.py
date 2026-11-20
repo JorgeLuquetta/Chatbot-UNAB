@@ -112,9 +112,9 @@ class PgNewsStore:
         async with self.pool.acquire() as conn:
             for a in articles:
                 status = await conn.execute(
-                    "INSERT INTO noticias (title, published_at, summary, source_url) VALUES ($1, $2, $3, $4) "
-                    "ON CONFLICT (source_url) DO NOTHING",
-                    a.title, a.published_at, a.summary, a.source_url,
+                    "INSERT INTO noticias (title, published_at, summary, source_url, category, source_name, image_url) "
+                    "VALUES ($1, $2, $3, $4, $5, $6, $7) ON CONFLICT (source_url) DO NOTHING",
+                    a.title, a.published_at, a.summary, a.source_url, a.category, a.source_name, a.image_url,
                 )
                 inserted += int(status.split()[-1])
         return inserted

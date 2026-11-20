@@ -1,0 +1,16 @@
+{
+  "request": {
+    "method": "POST",
+    "url": "http://localhost:9000/webhook/chat",
+    "body": {
+      "student_id": "U00000010",
+      "message": "¿Cuáles son los requisitos de grado?"
+    }
+  },
+  "status": 200,
+  "seconds": 235.801748,
+  "response": {
+    "response": "Los requisitos para obtener el título profesional en la UNAB incluyen aprobar todos los créditos del plan de estudios, tener un promedio ponderado acumulado superior a 3.3, aprobar la prueba de Estado Saber Pro y estar a paz y salvo académico y financiero con la universidad. Además, se requiere presentar el informe final del proyecto de grado o investigación.",
+    "intent": "consulta-general"
+  }
+}

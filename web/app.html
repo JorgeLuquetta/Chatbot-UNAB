@@ -136,7 +136,9 @@
   </div>
 </main>
 <script>
-const CHAT_URL = "https://chat.traumado.top";
+// Con dominio (túnel) usa chatbotia./expoapp.traumado.top; con IP pública usa http://IP:9001 y exp://IP:8081
+const ON_DOMAIN = location.hostname.endsWith("traumado.top");
+const CHAT_URL = ON_DOMAIN ? "https://chatbotia.traumado.top" : `http://${location.hostname}:9001`;
 function drawQR(el, text) {
   el.innerHTML = "";
   new QRCode(el, { text, width: 220, height: 220, colorDark: "#2e2645", colorLight: "#ffffff", correctLevel: QRCode.CorrectLevel.M });
@@ -145,7 +147,7 @@ drawQR(document.getElementById("qr-web"), CHAT_URL);
 const a = document.getElementById("url-web"); a.href = CHAT_URL; a.textContent = CHAT_URL;
 
 // Si el servidor de Expo está corriendo, muestra su QR (exps:// = Expo Go por HTTPS a través del túnel)
-const EXPO_URL = "exps://expo.traumado.top";
+const EXPO_URL = ON_DOMAIN ? "exps://expoapp.traumado.top" : `exp://${location.hostname}:8081`;
 function checkExpo() {
   fetch("expo-status", { cache: "no-store" }).then((r) => r.ok ? r.text() : "").then((txt) => {
     const box = document.getElementById("qr-expo-box");
@@ -165,5 +167,6 @@ function checkExpo() {
 checkExpo();
 setInterval(checkExpo, 15000);
 </script>
+<script src="home.js"></script>
 </body>
 </html>

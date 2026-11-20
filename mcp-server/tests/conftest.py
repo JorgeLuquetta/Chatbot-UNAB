@@ -6,6 +6,8 @@ import pytest
 from hypothesis import settings as hyp_settings
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+# Las pruebas usan dominios de ejemplo: se desactiva el filtro "solo UNAB" del scraper (se prueba aparte)
+os.environ["NEWS_ALLOWED_DOMAINS"] = ""
 
 # Mínimo 100 iteraciones por property test (estrategia de testing del diseño)
 hyp_settings.register_profile("ci", max_examples=100, deadline=None)

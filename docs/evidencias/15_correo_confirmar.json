@@ -1,0 +1,16 @@
+{
+  "request": {
+    "method": "POST",
+    "url": "http://localhost:9000/webhook/chat",
+    "body": {
+      "student_id": "U00000010",
+      "message": "sí"
+    }
+  },
+  "status": 200,
+  "seconds": 0.972804,
+  "response": {
+    "response": "✅ Listo, envié tu informe de avance a **unab.u00000010@yopmail.com**. Está en la bandeja de prueba del portal: https://portal.traumado.top/correo/",
+    "intent": "correo"
+  }
+}

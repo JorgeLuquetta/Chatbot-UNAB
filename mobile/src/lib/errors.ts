@@ -5,7 +5,7 @@ export const ChatErrors = {
   CONNECTIVITY: 'No hay conexión con el servidor. Revisa tu internet e inténtalo de nuevo.',
   TIMEOUT: 'El asistente está tardando más de lo normal. Inténtalo de nuevo en un momento.',
   SESSION: 'No encontramos tu ID de estudiante. Escríbelo de nuevo.',
-  REJECTED: 'No pude procesar tu mensaje. Reformula tu pregunta sobre temas académicos de la UNAB.',
+  REJECTED: 'Solo respondo consultas informativas de la UNAB (matrícula, estado académico, materias, reglamento, calendario, noticias). No resuelvo operaciones, ejercicios ni tareas.',
   UNAVAILABLE: 'El servicio no está disponible en este momento. Inténtalo más tarde.',
   GENERIC: 'Ocurrió un problema inesperado. Inténtalo de nuevo.',
 } as const;

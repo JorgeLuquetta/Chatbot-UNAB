@@ -1,0 +1,16 @@
+{
+  "request": {
+    "method": "POST",
+    "url": "http://localhost:9000/webhook/chat",
+    "body": {
+      "student_id": "U00000010",
+      "message": "unab.prueba.u00000010@yopmail.com"
+    }
+  },
+  "status": 200,
+  "seconds": 3.837233,
+  "response": {
+    "response": "✅ Listo, envié las noticias con 5 imagen(es) adjunta(s) a **unab.prueba.u00000010@yopmail.com** (actualicé tu correo). Está en la bandeja de prueba del portal: https://portal.traumado.top/correo/",
+    "intent": "correo"
+  }
+}

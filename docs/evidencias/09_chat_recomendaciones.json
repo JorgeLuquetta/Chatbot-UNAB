@@ -1,0 +1,16 @@
+{
+  "request": {
+    "method": "POST",
+    "url": "http://localhost:9000/webhook/chat",
+    "body": {
+      "student_id": "U00000010",
+      "message": "Dame recomendaciones para tener éxito en el programa"
+    }
+  },
+  "status": 200,
+  "seconds": 243.478387,
+  "response": {
+    "response": "Para tener éxito en tu programa, es importante matricular primero las materias reprobadas: Microeconomía y Matemáticas Financieras. Además, refuerza tus fundamentos en Expresión Oral y Escrita antes de asistir a las clases que dependen de ellas. Participa activamente en seminarios de investigación para desarrollar tu autonomía académica y sumar conocimientos adicionales. Por último, crea hábitos de estudio regulares: 2 horas de estudio independiente por cada hora de clase, utilizando técnicas como el Pomodoro para maximizar la eficiencia del tiempo dedicado a la lectura y repaso espaciado para mantener tu memoria en alta.",
+    "intent": "plan-academico"
+  }
+}

@@ -72,6 +72,11 @@ class Article(BaseModel):
     published_at: datetime
     summary: str
     source_url: str
+    # educacion | tecnologia | ingenieria-sistemas | general (ver scraper.classify)
+    category: str = "general"
+    source_name: str = "UNAB"
+    image_url: str | None = None   # imagen de la noticia (RSS, listado HTML u og:image de la página)
+    tags: list[str] = Field(default_factory=list, exclude=True)  # etiquetas del RSS (solo para clasificar)
 
 
 class ScraperReport(BaseModel):
@@ -79,4 +84,6 @@ class ScraperReport(BaseModel):
     total_extracted: int = 0
     total_inserted: int = 0
     skipped_duplicates: int = 0
+    by_category: dict[str, int] = Field(default_factory=dict)
+    with_image: int = 0
     failed_sources: list[str] = Field(default_factory=list)

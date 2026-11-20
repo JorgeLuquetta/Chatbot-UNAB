@@ -57,6 +57,21 @@ export default function TabsLayout() {
         }}
       />
       <Tabs.Screen
+        name="plan"
+        options={{
+          title: 'Mi plan académico',
+          tabBarLabel: 'Mi plan',
+          tabBarIcon: ({ color, size }) => <Ionicons name="trending-up-outline" size={size} color={String(color)} />,
+        }}
+      />
+      <Tabs.Screen
+        name="noticias"
+        options={{
+          title: 'Noticias',
+          tabBarIcon: ({ color, size }) => <Ionicons name="newspaper-outline" size={size} color={String(color)} />,
+        }}
+      />
+      <Tabs.Screen
         name="calendario"
         options={{
           title: 'Calendario',

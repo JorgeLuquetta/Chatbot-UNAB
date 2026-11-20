@@ -120,6 +120,8 @@
   .topic:nth-child(2) { background: var(--mint); }
   .topic:nth-child(3) { background: var(--pink); }
   .topic:nth-child(4) { background: var(--sky); }
+  .topic:nth-child(5) { background: var(--lemon); }
+  .topic:nth-child(6) { background: var(--peach); }
 
   /* Conversación */
   #log {
@@ -234,10 +236,12 @@
       </div>
     </header>
     <div class="topics" aria-label="Temas que conoce el asistente">
+      <span class="topic"><i>🎓</i>Matrícula y plan</span>
       <span class="topic"><i>📘</i>Reglamento</span>
       <span class="topic"><i>🧾</i>Tus cursos</span>
       <span class="topic"><i>📰</i>Noticias</span>
       <span class="topic"><i>📅</i>Calendario</span>
+      <span class="topic"><i>✉️</i>Envíos por correo</span>
     </div>
     <div id="log" aria-live="polite"></div>
     <form id="chatform" autocomplete="off">
@@ -258,9 +262,9 @@ const store = {
   set(k, v) { try { localStorage.setItem(k, v); } catch {} },
   del(k) { try { localStorage.removeItem(k); } catch {} },
 };
-const LABELS = { "consulta-general": "Reglamento", "cursos-realizados": "Tu historial", "noticias": "Noticias", "calendario": "Calendario" };
-const TAG_COLORS = { "consulta-general": "var(--lavender)", "cursos-realizados": "var(--mint)", "noticias": "var(--pink)", "calendario": "var(--sky)" };
-const SUGGESTIONS = ["¿Cuál es mi avance en la carrera?", "¿Qué materias tengo pendientes?", "¿Cuáles son los requisitos de grado?", "¿Qué noticias hay en la universidad?"];
+const LABELS = { "consulta-general": "Reglamento", "cursos-realizados": "Tu historial", "noticias": "Noticias", "calendario": "Calendario", "plan-academico": "Tu plan académico", "correo": "Correo" };
+const TAG_COLORS = { "consulta-general": "var(--lavender)", "cursos-realizados": "var(--mint)", "noticias": "var(--pink)", "calendario": "var(--sky)", "plan-academico": "var(--lemon)", "correo": "var(--peach)" };
+const SUGGESTIONS = ["¿Qué materias debo matricular el próximo semestre?", "¿Cuál es mi estado académico?", "¿Cuándo me voy a graduar?", "¿Cuáles son los requisitos de grado?", "¿Qué noticias de tecnología hay hoy?", "Envíame mi informe de avance al correo"];
 const ID_RE = /\b(U\d{8})\b/i;
 let student = null;   // { student_id, full_name, program, current_semester, progress_percentage }
 let busy = false;
@@ -279,7 +283,12 @@ async function post(path, body, ms) {
 function bubble(text, cls, tag, intent) {
   const d = document.createElement("div");
   d.className = "msg " + cls;
-  d.textContent = text;
+  // Negritas **así** (sin HTML: cada parte se agrega como texto)
+  String(text).split(/(\*\*[^*]+\*\*)/).forEach((part) => {
+    if (/^\*\*[^*]+\*\*$/.test(part)) { const b = document.createElement("strong"); b.textContent = part.slice(2, -2); d.appendChild(b); }
+    else if (part) d.appendChild(document.createTextNode(part.replace(/\*([^*
+]+)\*/g, "$1")));
+  });
   if (tag) {
     d.appendChild(document.createElement("br"));
     const s = document.createElement("span"); s.className = "tag"; s.textContent = tag;
@@ -324,7 +333,7 @@ function setStudent(s) {
 }
 
 function greet() {
-  bubble("¡Hola! 👋 Soy el asistente académico de la UNAB.\n\nPuedo ayudarte con el reglamento estudiantil, tus materias y tu avance, las noticias de la universidad y el calendario académico.\n\nPara empezar, escribe tu ID de estudiante (por ejemplo, U00000001).", "bot");
+  bubble("¡Hola! 👋 Soy el asistente académico de la UNAB.\n\nPuedo ayudarte con tu matrícula (qué materias inscribir), tu estado académico, tu proyección de grado, recomendaciones para tener éxito, el reglamento y los requisitos de grado, el calendario académico y las noticias de educación y tecnología.\n\nPara empezar, escribe tu ID de estudiante (por ejemplo, U00000001).", "bot");
 }
 
 function welcome(s, again) {
@@ -397,5 +406,6 @@ $("change").onclick = () => { setStudent(null); bubble("Escribe el ID del estudi
   greet(); $("msg").focus();
 })();
 </script>
+<script src="home.js"></script>
 </body>
 </html>

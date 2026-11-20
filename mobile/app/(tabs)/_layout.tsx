@@ -1,7 +1,9 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { Redirect, Tabs } from 'expo-router';
-import { ActivityIndicator, Alert, Pressable, View } from 'react-native';
+import { ActivityIndicator, Alert, View } from 'react-native';
 import { useAuth } from '../../src/auth';
+import { ChatHeader } from '../../src/chatui';
+import { Aurora } from '../../src/components';
 import { useTheme } from '../../src/theme';
 
 export default function TabsLayout() {
@@ -11,7 +13,8 @@ export default function TabsLayout() {
   if (loading) {
     return (
       <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: t.bg }}>
-        <ActivityIndicator color={t.purple} size="large" />
+        <Aurora />
+        <ActivityIndicator color={t.brand} size="large" />
       </View>
     );
   }
@@ -26,41 +29,33 @@ export default function TabsLayout() {
   return (
     <Tabs
       screenOptions={{
-        headerStyle: { backgroundColor: t.orange },
-        headerTintColor: '#1C2A48',
-        headerTitleStyle: { fontWeight: '800' },
-        tabBarActiveTintColor: t.purple,
-        tabBarInactiveTintColor: t.tabInactive,
-        tabBarStyle: { backgroundColor: t.card, borderTopColor: t.border },
+        // Mismo encabezado de la web: logo, "Chatbot UNAB" y la píldora con el estudiante
+        header: () => <ChatHeader student={session} onChange={confirmLogout} />,
+        tabBarActiveTintColor: t.brandDeep,
+        tabBarInactiveTintColor: t.muted,
+        tabBarLabelStyle: { fontWeight: '700', fontSize: 11 },
+        tabBarStyle: { backgroundColor: t.glassStrong, borderTopColor: t.line, borderTopWidth: 1 },
         sceneStyle: { backgroundColor: t.bg },
-        headerRight: () => (
-          <Pressable onPress={confirmLogout} hitSlop={12} style={{ marginRight: 16 }} accessibilityLabel="Cambiar estudiante">
-            <Ionicons name="log-out-outline" size={24} color="#1C2A48" />
-          </Pressable>
-        ),
       }}
     >
       <Tabs.Screen
         name="index"
         options={{
-          title: 'Asistente UNAB',
-          tabBarLabel: 'Chat',
+          title: 'Chat',
           tabBarIcon: ({ color, size }) => <Ionicons name="chatbubbles-outline" size={size} color={String(color)} />,
         }}
       />
       <Tabs.Screen
         name="ruta"
         options={{
-          title: 'Ruta académica',
-          tabBarLabel: 'Mi ruta',
+          title: 'Mi ruta',
           tabBarIcon: ({ color, size }) => <Ionicons name="school-outline" size={size} color={String(color)} />,
         }}
       />
       <Tabs.Screen
         name="plan"
         options={{
-          title: 'Mi plan académico',
-          tabBarLabel: 'Mi plan',
+          title: 'Mi plan',
           tabBarIcon: ({ color, size }) => <Ionicons name="trending-up-outline" size={size} color={String(color)} />,
         }}
       />

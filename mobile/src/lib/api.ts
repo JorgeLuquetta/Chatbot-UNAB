@@ -71,6 +71,7 @@ export interface AcademicPlan {
 }
 export interface NewsItem {
   title: string; summary: string; source_url: string; source_name: string; category: string; published_at: string;
+  image_url?: string | null;
 }
 
 const qs = (student_id: string) => `?student_id=${encodeURIComponent(student_id)}`;

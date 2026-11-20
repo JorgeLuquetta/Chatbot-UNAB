@@ -2,10 +2,11 @@ import Ionicons from '@expo/vector-icons/Ionicons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useLocalSearchParams } from 'expo-router';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import {
-  ActivityIndicator, FlatList, KeyboardAvoidingView, Platform, Pressable, StyleSheet, Text, TextInput, View,
-} from 'react-native';
+import { FlatList, KeyboardAvoidingView, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuth, useSession } from '../../src/auth';
+import { BotBubble, Composer, HEADER_HEIGHT, IntentTag, MeBubble, RichText, Suggestions, Topics } from '../../src/chatui';
+import { Backdrop, TypingDots } from '../../src/components';
 import { MESSAGE_MAX, isValidMessage } from '../../src/lib/academic';
 import { api } from '../../src/lib/api';
 import { chatErrorMessage, isSessionExpired } from '../../src/lib/errors';
@@ -17,17 +18,9 @@ interface Msg {
   role: Role;
   text: string;
   intent?: string;
+  secs?: number; // segundos que tardó la respuesta
   retryOf?: string; // texto a reenviar si fue un error
 }
-
-const INTENT_LABEL: Record<string, string> = {
-  'consulta-general': 'Documentos UNAB',
-  calendario: 'Calendario',
-  'cursos-realizados': 'Mis cursos',
-  noticias: 'Noticias',
-  'plan-academico': 'Mi plan académico',
-  correo: 'Correo',
-};
 
 const SUGGESTIONS = [
   '¿Qué materias debo matricular el próximo semestre?',
@@ -40,9 +33,11 @@ const SUGGESTIONS = [
 ];
 
 const newId = () => `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+const fmtPct = (n?: number) => `${Number(n ?? 0).toLocaleString('es-CO', { maximumFractionDigits: 1 })} %`;
 
 export default function ChatScreen() {
   const t = useTheme();
+  const insets = useSafeAreaInsets();
   const session = useSession();
   const { signOut } = useAuth();
   const storageKey = `chat:${session.student_id}`;
@@ -72,9 +67,11 @@ export default function ChatScreen() {
     setInput('');
     setMessages((m) => [...m.filter((x) => x.role !== 'error'), { id: newId(), role: 'user', text }]);
     setSending(true);
+    const started = Date.now();
     try {
       const r = await api.chat(session.student_id, text);
-      setMessages((m) => [...m, { id: newId(), role: 'bot', text: r.response, intent: r.intent }]);
+      const secs = Math.round((Date.now() - started) / 1000);
+      setMessages((m) => [...m, { id: newId(), role: 'bot', text: r.response, intent: r.intent, secs }]);
     } catch (e) {
       if (isSessionExpired(e)) {
         await signOut();
@@ -108,126 +105,93 @@ export default function ChatScreen() {
 
   const firstName = session.full_name?.split(' ')[0] ?? '';
   const tooLong = input.length > MESSAGE_MAX;
+  const semester = session.current_semester ? `${session.current_semester}.º semestre` : 'sin materias en curso';
+  const welcome =
+    `¡Hola, ${firstName}! 👋\n\n` +
+    (session.program ? `• Programa: ${session.program}\n` : '') +
+    `• Semestre actual: ${semester}` +
+    (session.progress_percentage != null ? `\n• Avance en la carrera: ${fmtPct(session.progress_percentage)}` : '') +
+    '\n\n¿En qué te puedo ayudar? (Cada respuesta tarda alrededor de 1 minuto.)';
 
   return (
-    <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'} keyboardVerticalOffset={90}>
-      <FlatList
-        ref={listRef}
-        data={messages}
-        keyExtractor={(m) => m.id}
-        contentContainerStyle={styles.list}
-        onContentSizeChange={() => listRef.current?.scrollToEnd({ animated: true })}
-        ListEmptyComponent={
-          <View style={styles.empty}>
-            <Text style={[styles.hello, { color: t.text }]}>Hola{firstName ? `, ${firstName}` : ''} 👋</Text>
-            <View style={[styles.card, { backgroundColor: t.card, borderColor: t.border }]}>
-              {!!session.program && <Text style={{ color: t.text }}>• Programa: {session.program}</Text>}
-              <Text style={{ color: t.text }}>
-                • Semestre actual: {session.current_semester ? `${session.current_semester}.º` : 'sin materias en curso'}
-              </Text>
-              {session.progress_percentage != null && (
-                <Text style={{ color: t.text }}>• Avance en la carrera: {session.progress_percentage} %</Text>
-              )}
+    <Backdrop>
+      <Topics />
+      <KeyboardAvoidingView
+        style={{ flex: 1 }}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        keyboardVerticalOffset={insets.top + HEADER_HEIGHT}
+      >
+        <FlatList
+          ref={listRef}
+          data={messages}
+          keyExtractor={(m) => m.id}
+          contentContainerStyle={styles.list}
+          keyboardShouldPersistTaps="handled"
+          onContentSizeChange={() => listRef.current?.scrollToEnd({ animated: true })}
+          ListHeaderComponent={
+            <View style={{ gap: 14 }}>
+              <BotBubble><RichText text={welcome} color={t.text} /></BotBubble>
+              {messages.length === 0 && <Suggestions items={SUGGESTIONS} onPick={send} />}
             </View>
-            <Text style={{ color: t.muted, textAlign: 'center', marginBottom: 16 }}>
-              ¿En qué te ayudo? Pregúntame qué matricular, tu estado académico, cuándo te gradúas, el reglamento, el calendario o las noticias.
-            </Text>
-            {SUGGESTIONS.map((s) => (
-              <Pressable key={s} onPress={() => send(s)} style={[styles.chip, { borderColor: t.purple }]}>
-                <Text style={{ color: t.purple, fontWeight: '600' }}>{s}</Text>
-              </Pressable>
-            ))}
-          </View>
-        }
-        renderItem={({ item }) => {
-          if (item.role === 'user') {
-            return (
-              <View style={[styles.bubble, styles.right, { backgroundColor: t.userBubble }]}>
-                <Text style={{ color: t.userText, fontSize: 15 }}>{item.text}</Text>
-              </View>
-            );
           }
-          if (item.role === 'error') {
+          renderItem={({ item }) => {
+            if (item.role === 'user') return <MeBubble text={item.text} />;
+            if (item.role === 'error') {
+              return (
+                <BotBubble warn>
+                  <Text style={{ color: t.warn, fontSize: 15, lineHeight: 21 }}>{item.text}</Text>
+                  <Pressable onPress={() => retry(item)} style={[styles.retry, { backgroundColor: t.peach }]} accessibilityRole="button">
+                    <Ionicons name="refresh" size={15} color={t.onPastel} />
+                    <Text style={{ color: t.onPastel, fontWeight: '800', fontSize: 13 }}>Reintentar</Text>
+                  </Pressable>
+                </BotBubble>
+              );
+            }
             return (
-              <View style={[styles.bubble, styles.left, { backgroundColor: t.errorBg }]}>
-                <Text style={{ color: t.errorText }}>{item.text}</Text>
-                <Pressable onPress={() => retry(item)} style={styles.retry} accessibilityRole="button">
-                  <Ionicons name="refresh" size={16} color={t.errorText} />
-                  <Text style={{ color: t.errorText, fontWeight: '700' }}>Reintentar</Text>
-                </Pressable>
-              </View>
+              <BotBubble>
+                <RichText text={item.text} color={t.text} />
+                <IntentTag intent={item.intent} secs={item.secs} />
+              </BotBubble>
             );
+          }}
+          ListFooterComponent={
+            sending ? (
+              <BotBubble>
+                <View style={styles.typing}>
+                  <TypingDots />
+                  <Text style={{ color: t.muted, fontSize: 13, flexShrink: 1 }}>
+                    {elapsed}s{elapsed > 20 ? ' · el modelo local puede tardar hasta un minuto' : ''}
+                  </Text>
+                </View>
+              </BotBubble>
+            ) : undefined
           }
-          return (
-            <View style={[styles.bubble, styles.left, { backgroundColor: t.botBubble, borderColor: t.border, borderWidth: 1 }]}>
-              {item.intent && INTENT_LABEL[item.intent] && (
-                <Text style={[styles.tag, { color: t.warn }]}>{INTENT_LABEL[item.intent]}</Text>
-              )}
-              <Text style={{ color: t.text, fontSize: 15, lineHeight: 21 }}>
-                {/* Negritas **así** del asistente */}
-                {item.text.split(/(\*\*[^*]+\*\*)/).map((part, i) =>
-                  /^\*\*[^*]+\*\*$/.test(part)
-                    ? <Text key={i} style={{ fontWeight: '800' }}>{part.slice(2, -2)}</Text>
-                    : part.replace(/\*([^*\n]+)\*/g, '$1'))}
-              </Text>
-            </View>
-          );
-        }}
-        ListFooterComponent={
-          sending ? (
-            <View style={[styles.bubble, styles.left, styles.typing, { backgroundColor: t.botBubble, borderColor: t.border }]}>
-              <ActivityIndicator color={t.purple} />
-              <Text style={{ color: t.muted }}>
-                Pensando… {elapsed}s{elapsed > 20 ? ' (el modelo local puede tardar hasta un minuto)' : ''}
-              </Text>
-            </View>
-          ) : undefined
-        }
-      />
+        />
 
-      <View style={[styles.composer, { backgroundColor: t.card, borderTopColor: t.border }]}>
-        <TextInput
-          style={[styles.input, { color: t.text, backgroundColor: t.bg, borderColor: tooLong ? t.errorText : t.border }]}
+        <Composer
           value={input}
           onChangeText={setInput}
+          onSend={() => send(input)}
+          canSend={isValidMessage(input) && !sending}
+          invalid={tooLong}
           placeholder="Escribe tu pregunta…"
-          placeholderTextColor={t.tabInactive}
           multiline
           maxLength={MESSAGE_MAX + 50}
           editable={!sending}
         />
-        <Pressable
-          onPress={() => send(input)}
-          disabled={!isValidMessage(input) || sending}
-          style={[styles.send, { backgroundColor: isValidMessage(input) && !sending ? t.purple : t.tabInactive }]}
-          accessibilityLabel="Enviar"
-        >
-          <Ionicons name="send" size={18} color="#fff" />
-        </Pressable>
-      </View>
-      {input.length > MESSAGE_MAX - 200 && (
-        <Text style={[styles.counter, { color: tooLong ? t.errorText : t.muted, backgroundColor: t.card }]}>
-          {input.length}/{MESSAGE_MAX}
-        </Text>
-      )}
-    </KeyboardAvoidingView>
+        {input.length > MESSAGE_MAX - 200 && (
+          <Text style={[styles.counter, { color: tooLong ? t.bad : t.muted }]}>
+            {input.length}/{MESSAGE_MAX}
+          </Text>
+        )}
+      </KeyboardAvoidingView>
+    </Backdrop>
   );
 }
 
 const styles = StyleSheet.create({
-  list: { padding: 16, gap: 10, flexGrow: 1 },
-  empty: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingVertical: 32 },
-  hello: { fontSize: 24, fontWeight: '800', marginBottom: 6 },
-  card: { borderWidth: 1, borderRadius: 12, padding: 12, gap: 4, marginBottom: 14, alignSelf: 'stretch' },
-  chip: { borderWidth: 1.5, borderRadius: 20, paddingHorizontal: 14, paddingVertical: 9, marginTop: 8, maxWidth: '100%' },
-  bubble: { maxWidth: '85%', borderRadius: 16, paddingHorizontal: 14, paddingVertical: 10 },
-  right: { alignSelf: 'flex-end', borderBottomRightRadius: 4 },
-  left: { alignSelf: 'flex-start', borderBottomLeftRadius: 4 },
-  tag: { fontSize: 11, fontWeight: '800', textTransform: 'uppercase', marginBottom: 4, letterSpacing: 0.5 },
-  typing: { flexDirection: 'row', alignItems: 'center', gap: 8, borderWidth: 1, marginTop: 10 },
-  retry: { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 8 },
-  composer: { flexDirection: 'row', alignItems: 'flex-end', padding: 10, gap: 8, borderTopWidth: 1 },
-  input: { flex: 1, borderWidth: 1, borderRadius: 20, paddingHorizontal: 14, paddingTop: 10, paddingBottom: 10, maxHeight: 120, fontSize: 15 },
-  send: { width: 44, height: 44, borderRadius: 22, alignItems: 'center', justifyContent: 'center' },
-  counter: { textAlign: 'right', paddingHorizontal: 16, paddingBottom: 6, fontSize: 12 },
+  list: { padding: 16, gap: 14, flexGrow: 1 },
+  typing: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  retry: { flexDirection: 'row', alignItems: 'center', gap: 5, alignSelf: 'flex-start', marginTop: 10, borderRadius: 999, paddingHorizontal: 12, paddingVertical: 6 },
+  counter: { textAlign: 'right', paddingHorizontal: 20, paddingBottom: 6, fontSize: 12 },
 });

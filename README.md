@@ -303,24 +303,55 @@ producción hay que usar el login.
 
 ## Capturas
 
-Generadas con `scripts/capturas.py` (Playwright) en `docs/img/`. Las de la app en el celular se agregan con el
-procedimiento del [manual de usuario](docs/manual_usuario.md#capturas-de-la-app).
+Capturas del sistema desplegado en la VM de Azure (`docs/img/`), en el orden en que lo recorre un usuario.
 
-**Workflows activos en n8n**
+### Portal: todas las herramientas en un solo lugar
 
-![Workflows en n8n](docs/img/n8n_workflows.png)
+Punto de entrada del proyecto, con accesos al chat web, la app móvil, el plan académico, las noticias, n8n y la
+bandeja de correo de prueba.
 
-**Workflow de chat: ruteo por intención, MCP, LLM, guardrails y memoria**
+![Portal del asistente académico UNAB](docs/img/Menu.png)
 
-![Workflow de chat en n8n](docs/img/n8n_chat.png)
+### Chat web para estudiantes
 
-**Agente IA: AI Agent + Ollama + memoria PostgreSQL + MCP Client Tool**
+El asistente saluda, pide el ID de estudiante y responde sobre matrícula, estado académico, proyección de grado,
+reglamento, calendario, noticias y envíos por correo.
 
-![Agente IA con MCP en n8n](docs/img/n8n_agente.png)
+![Chat web del asistente](docs/img/Chatbot.png)
 
-**Chat web: matrícula sugerida** · **Página con los QR de la app**
+### App móvil (Expo Go)
 
-<img src="docs/img/chat_web.png" width="320" alt="Chat web"> <img src="docs/img/qr.png" width="560" alt="Página con los QR">
+Página con los códigos QR para abrir el chat web en el navegador del celular o la app nativa en Expo Go.
+
+![Página con los QR de la app móvil](docs/img/App%20movil.png)
+
+### Plan académico
+
+Estado académico, proyección de grado y matrícula sugerida según prerrequisitos y créditos (ejemplo: `U00000010`,
+estudiante en observación con materias por repetir).
+
+![Plan académico de un estudiante](docs/img/Plan%20academico.png)
+
+### Noticias de la UNAB
+
+Noticias de educación, tecnología e ingeniería de sistemas que recoge el scraper cada 6 horas, con imagen, fuente
+y fecha.
+
+![Noticias de la UNAB](docs/img/Noticias.png)
+
+### Envíos por correo
+
+Bandeja de prueba (Mailpit) con los informes de avance y las noticias que el asistente envía cuando el estudiante
+lo pide desde el chat.
+
+![Bandeja de correo de prueba](docs/img/Correo.png)
+
+### Administración en n8n
+
+Los 11 workflows activos del proyecto: agente IA con MCP, scraper de noticias, plan académico, búsqueda de
+estudiantes, chat con ruteo y notificaciones.
+
+![Workflows activos en n8n](docs/img/N8n.png)
 
 ## Estructura
 

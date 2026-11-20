@@ -168,8 +168,7 @@ export default function ChatScreen() {
                 {item.text.split(/(\*\*[^*]+\*\*)/).map((part, i) =>
                   /^\*\*[^*]+\*\*$/.test(part)
                     ? <Text key={i} style={{ fontWeight: '800' }}>{part.slice(2, -2)}</Text>
-                    : part.replace(/\*([^*
-]+)\*/g, '$1'))}
+                    : part.replace(/\*([^*\n]+)\*/g, '$1'))}
               </Text>
             </View>
           );

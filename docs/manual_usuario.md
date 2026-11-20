@@ -71,7 +71,7 @@ El botón de salida (arriba a la derecha) permite entrar con otro ID.
 | Recurso | Dirección |
 |---|---|
 | n8n (workflows y ejecuciones) | http://20.221.245.242:9000 — usuario y clave en `~/Chatbot-UNAB/CREDENCIALES.md` de la VM |
-| SSH a la VM | `ssh azureuser@20.221.245.242` (llave o contraseña; el puerto 22 solo acepta la IP del administrador) |
+| SSH a la VM | `ssh azureuser@20.221.245.242` (solo con contraseña, sin llaves; el puerto 22 solo acepta la IP del administrador) |
 | PostgreSQL | dentro de la VM: `docker compose exec db psql -U postgres -d chatbot` |
 
 Si cambia tu IP, actualiza la regla de SSH:

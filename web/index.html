@@ -286,8 +286,7 @@ function bubble(text, cls, tag, intent) {
   // Negritas **así** (sin HTML: cada parte se agrega como texto)
   String(text).split(/(\*\*[^*]+\*\*)/).forEach((part) => {
     if (/^\*\*[^*]+\*\*$/.test(part)) { const b = document.createElement("strong"); b.textContent = part.slice(2, -2); d.appendChild(b); }
-    else if (part) d.appendChild(document.createTextNode(part.replace(/\*([^*
-]+)\*/g, "$1")));
+    else if (part) d.appendChild(document.createTextNode(part.replace(/\*([^*\n]+)\*/g, "$1")));
   });
   if (tag) {
     d.appendChild(document.createElement("br"));

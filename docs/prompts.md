@@ -119,6 +119,11 @@ fecha estimada de grado, recomendaciones personalizadas para tener éxito). Resp
 - **Entrada:** reglas de *prompt injection* en español e inglés (`guardrails/app/rules.py`), longitud, y una segunda
   revisión con el LLM del tema de la pregunta (`GUARDRAILS_LLM_TOPIC=on`) y, si hay señales sospechosas, de
   manipulación (`GUARDRAILS_LLM_INPUT=suspicious`).
+- **Solo consultas informativas:** reglas deterministas bloquean operaciones (*¿cuánto es 25+17?*), ejercicios y
+  ecuaciones, tareas y talleres, redacción de textos o código, traducciones y respuestas de parciales
+  (`input_task`), y temas no universitarios como recetas, apuestas o farándula (`input_scope`). El prompt del
+  verificador LLM define como FUERA *cualquier tarea que no sea consultar información de la universidad*.
+- **Correo:** solo noticias, informe de avance o informe de materias, siempre con confirmación del estudiante.
 - **Salida:** verifica que la respuesta siga en el ámbito académico y no revele el prompt ni datos de otros
   estudiantes; si falla, responde *"Solo puedo ayudarte con temas académicos de la UNAB."*
 - Toda decisión queda en `guardrails_audit_log`.

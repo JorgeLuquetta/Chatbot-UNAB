@@ -185,6 +185,13 @@ async def build_progress(student: dict, session_id: str) -> tuple[str, str, list
         f"Periodo estimado de grado: <b>{e(pr['estimated_graduation_term'])}</b> "
         f"({'vas al día' if pr['on_track'] else 'tienes atrasos'}).</p>"
         f"<h3>Recomendaciones</h3><ul>{recs}</ul>")
+    try:
+        alerts = json.loads(await pool.fetchval("SELECT student_alerts($1)::text", session_id) or "[]")
+    except Exception:
+        alerts = []
+    if alerts:
+        body += "<h3>Alertas de requisitos pendientes</h3><ul>" + "".join(
+            f"<li><b>{'⚠️ ' if a['level'] == 'alta' else ''}{e(a['text'])}</b></li>" for a in alerts) + "</ul>"
     return "Informe de avance académico · Asistente UNAB", _shell("Informe de avance académico", student["full_name"], body), []
 
 
@@ -209,6 +216,24 @@ async def build_courses(student: dict, session_id: str) -> tuple[str, str, list]
             f"<table style='border-collapse:collapse;width:100%;font-size:14px'><tr style='background:#F6F7FB'>"
             f"<th align=left>Código</th><th align=left>Materia</th><th align=left>Estado</th><th align=right>Nota</th></tr>"
             + "".join(parts) + "</table>")
+    # Cursos del Centro de Competencias Digitales (requisito de grado: insignia)
+    try:
+        ccd = json.loads(await pool.fetchval("SELECT ccd_progress($1)::text", session_id) or "null")
+    except Exception:
+        ccd = None
+    if ccd:
+        from .academic import CCD_STATUS
+        b = ccd["badge"]
+        rows_ccd = "".join(
+            f"<tr><td>{e(c['course_code'])}</td><td>{e(c['course_name'])}</td>"
+            f"<td>{'Obligatorio' if c['required'] else 'Electivo'}</td><td>{e(CCD_STATUS.get(c['status'], c['status']))}</td></tr>"
+            for c in ccd["courses"])
+        body += (f"<h3>Competencias digitales (CCD)</h3><p>Insignia: <b>{'obtenida' if b['earned'] else 'pendiente'}</b> · "
+                 f"{b['required_done']} de {b['required_total']} obligatorios y {b['electives_done']} electivo(s) aprobados"
+                 f"{' · siguiente: ' + e(b['next']) if b.get('next') else ''}.</p>"
+                 f"<table style='border-collapse:collapse;width:100%;font-size:14px'><tr style='background:#F6F7FB'>"
+                 f"<th align=left>Código</th><th align=left>Curso</th><th align=left>Tipo</th><th align=left>Estado</th></tr>"
+                 f"{rows_ccd}</table>")
     return "Informe de materias · Asistente UNAB", _shell("Informe de materias", student["full_name"], body), []
 
 

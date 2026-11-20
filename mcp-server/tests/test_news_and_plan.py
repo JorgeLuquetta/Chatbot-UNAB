@@ -86,3 +86,29 @@ def test_rss_tags_classify():
     assert a.tags == ["Ingeniería de Sistemas"]
     assert classify(f"{a.title} {' '.join(a.tags)}") == "ingenieria-sistemas"
     assert "tags" not in a.model_dump()          # no se guarda en la BD
+
+
+def test_external_clients_read_only():
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+    import main
+    call = lambda name: {"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": {"name": name, "arguments": {}}}
+    assert main._is_write_call(call("ingest_documents"))
+    assert main._is_write_call(call("run_news_scraper"))
+    assert not main._is_write_call(call("get_academic_plan"))
+    assert not main._is_write_call({"method": "tools/list"})
+
+
+def test_ccd_summary_text():
+    from app.academic import ccd_summary
+    ccd = {"student_id": "U1", "diagnostic": {"score": 88, "level": "avanzado"},
+           "badge": {"earned": False, "required_done": 2, "required_total": 4, "electives_done": 0,
+                     "next": "CCD03 Gestión de información y búsqueda académica"},
+           "courses": [{"course_code": "CCD02", "course_name": "Herramientas ofimáticas", "required": True,
+                        "level": "básico", "status": "homologated", "grade": None}],
+           "enrollment_info": "Cosmos UNAB"}
+    text = ccd_summary(ccd)
+    assert "88 puntos, nivel avanzado" in text
+    assert "2 de 4 cursos obligatorios" in text
+    assert "homologado por la prueba diagnóstica" in text
+    assert "YA TOMADOS" in text
+    assert "Siguiente curso recomendado: CCD03" in text

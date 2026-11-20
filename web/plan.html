@@ -74,6 +74,14 @@ async function show(id) {
             <span>${c.repeat ? "↻" : "＋"}</span></div>`).join("") || '<div class="muted">No hay materias disponibles.</div>'}
           ${en.blocked.length ? `<p class="tag" style="margin-top:10px">Bloqueadas: ${en.blocked.slice(0, 3).map((b) => esc(b.course_name) + " (falta " + esc(b.missing_prerequisites.map((m) => m.course_name).join(", ")) + ")").join("; ")}</p>` : ""}
         </section>
+        ${(p.alerts || []).length ? `<section class="card glass"><h2>Alertas de requisitos</h2><ul>${p.alerts.map((a) =>
+          `<li style="color:${a.level === 'alta' ? 'var(--bad)' : 'var(--warn)'};font-weight:700">${esc(a.text)}</li>`).join("")}</ul></section>` : ""}
+        ${p.ccd ? `<section class="card glass"><h2>Competencias digitales (CCD)</h2>
+          <p style="font-weight:800;color:${p.ccd.badge.earned ? 'var(--ok)' : 'var(--warn)'}">Insignia ${p.ccd.badge.earned ? 'obtenida' : 'pendiente'} · ${p.ccd.badge.required_done} de ${p.ccd.badge.required_total} obligatorios · ${p.ccd.badge.electives_done} electivo(s)</p>
+          ${p.ccd.diagnostic ? `<div class="muted">Prueba diagnóstica: ${p.ccd.diagnostic.score} puntos (nivel ${esc(p.ccd.diagnostic.level)})</div>` : ""}
+          ${p.ccd.courses.map((c) => `<div class="row"><span><b>${esc(c.course_code)}</b> ${esc(c.course_name)}<br><span class="tag">${c.required ? 'obligatorio' : 'electivo'} · ${esc(c.level)}</span></span>
+            <span class="tag">${({completed:'Aprobado',homologated:'Homologado',in_progress:'En curso',failed:'Reprobado',pending:'Pendiente'})[c.status] || esc(c.status)}${c.grade != null ? ' · ' + c.grade : ''}</span></div>`).join("")}
+          ${p.ccd.badge.next ? `<p class="tag">Siguiente: ${esc(p.ccd.badge.next)}</p>` : ""}</section>` : ""}
         <section class="card glass"><h2>Recomendaciones</h2>
           <ul>${p.recommendations.map((x) => `<li>${esc(x.text)}</li>`).join("")}</ul>
         </section>

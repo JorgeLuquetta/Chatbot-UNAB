@@ -68,6 +68,12 @@ export interface AcademicPlan {
     prerequisite_chain: number; estimated_graduation_term: string; on_track: boolean;
   };
   recommendations: { type: string; text: string }[];
+  alerts?: { level: 'alta' | 'media'; type: string; text: string }[];
+  ccd?: {
+    diagnostic: { score: number; level: string } | null;
+    badge: { earned: boolean; required_done: number; required_total: number; electives_done: number; next: string | null };
+    courses: { course_code: string; course_name: string; required: boolean; level: string; status: string; grade: number | null }[];
+  } | null;
 }
 export interface NewsItem {
   title: string; summary: string; source_url: string; source_name: string; category: string; published_at: string;

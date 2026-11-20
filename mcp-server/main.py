@@ -19,7 +19,7 @@ def _tool_params() -> dict[str, set[str]]:
     """Nombres de parámetros de cada herramienta MCP (según la firma de la función)."""
     out: dict[str, set[str]] = {}
     for name in ("search_documents", "get_student_courses", "ingest_documents", "run_news_scraper",
-                 "get_academic_plan", "get_academic_calendar", "get_news"):
+                 "get_academic_plan", "get_academic_calendar", "get_news", "get_ccd_progress"):
         obj = getattr(server_mod, name, None)
         fn = getattr(obj, "fn", obj)
         if callable(fn):
@@ -46,6 +46,14 @@ def _clean(msg: dict) -> bool:
     return bool(extra)
 
 
+WRITE_TOOLS = {"ingest_documents", "run_news_scraper"}
+
+
+def _is_write_call(msg) -> bool:
+    return (isinstance(msg, dict) and msg.get("method") == "tools/call"
+            and isinstance(msg.get("params"), dict) and msg["params"].get("name") in WRITE_TOOLS)
+
+
 def strip_unknown_args(asgi_app):
     """Middleware ASGI: elimina de tools/call los argumentos que la herramienta no declara."""
     async def wrapped(scope, receive, send):
@@ -56,9 +64,20 @@ def strip_unknown_args(asgi_app):
             m = await receive()
             body += m.get("body", b"")
             more = m.get("more_body", False)
+        external = any(k == b"x-mcp-external" for k, _ in scope["headers"])
         try:
             data = json.loads(body or b"null")
             msgs = data if isinstance(data, list) else [data]
+            # Clientes externos (mcp.traumado.top: Claude, OpenAI...) solo pueden usar herramientas de lectura
+            blocked = [m for m in msgs if external and _is_write_call(m)]
+            if blocked:
+                err = {"jsonrpc": "2.0", "id": blocked[0].get("id"),
+                       "error": {"code": -32601, "message": "Herramienta no disponible para clientes externos (solo lectura)"}}
+                payload = json.dumps(err).encode()
+                await send({"type": "http.response.start", "status": 200,
+                            "headers": [(b"content-type", b"application/json"), (b"content-length", str(len(payload)).encode())]})
+                await send({"type": "http.response.body", "body": payload})
+                return
             if any([_clean(m) for m in msgs]):
                 body = json.dumps(data).encode()
         except ValueError:

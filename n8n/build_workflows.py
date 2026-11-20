@@ -218,7 +218,9 @@ def build_chat() -> dict:
         "noticias (noticias, eventos o novedades recientes de la universidad, educación o tecnología), "
         "plan-academico (qué materias matricular el próximo semestre, estado académico y promedio, "
         "proyección o fecha estimada de grado, recomendaciones personalizadas para tener éxito), "
-        "correo (pide que le ENVÍEN por correo noticias, su informe de avance o su informe de materias). "
+        "correo (pide que le ENVÍEN por correo noticias, su informe de avance o su informe de materias), "
+        "competencias-digitales (SUS cursos del Centro de Competencias Digitales, su prueba diagnóstica o su avance "
+        "hacia la insignia; si pregunta qué ES la insignia o el CCD, es consulta-general). "
         "Responde solo con la etiqueta.", ensure_ascii=False)
     http_json(wf, "Clasificar intención", OPENAI_URL,
               llm_body(f"[{{ role: 'system', content: {classifier_prompt} }}, {{ role: 'user', content: {M} }}]", 10, 0),
@@ -241,7 +243,7 @@ return [{{ json: {{
 }} }}];
 """, (1760, 300))
     wf.add("Enrutar por intención", "n8n-nodes-base.switch", 3,
-           {"mode": "expression", "numberOutputs": 6, "output": "={{ $json.route }}"}, (1980, 300))
+           {"mode": "expression", "numberOutputs": 7, "output": "={{ $json.route }}"}, (1980, 300))
 
     wf.link("¿Sesión válida?", "Correo pendiente (MCP)", 0)
     wf.link("Correo pendiente (MCP)", "¿Respuesta de correo?")
@@ -352,6 +354,19 @@ return [{{ json: {{ messages: buildMessages(planContext($input.first().json), ct
     wf.link("Solicitar envío (MCP)", "Responder solicitud de correo", 0)
     wf.link("Solicitar envío (MCP)", "Responder correo no disponible", 1)
 
+    # --- 6. Competencias digitales: cursos del CCD del estudiante y avance hacia la insignia (MCP → SQL)
+    http_json(wf, "Cursos CCD (MCP)", f"{MCP}/tools/get_ccd_progress",
+              f"{{ session_id: {I}.session_id }}", (2200, 1600), timeout_ms=8000, onError="continueErrorOutput")
+    code(wf, "Prompt competencias digitales", f"""
+const ctx = {I};
+return [{{ json: {{ messages: buildMessages(ccdContext($input.first().json), ctx.history, ctx.message, {HIST}) }} }}];
+""", (2420, 1600))
+    respond_fixed("Responder CCD no disponible",
+                  "No pude consultar tus cursos de competencias digitales en este momento. Intenta más tarde.", 1760)
+    wf.link("Enrutar por intención", "Cursos CCD (MCP)", 6)
+    wf.link("Cursos CCD (MCP)", "Prompt competencias digitales", 0)
+    wf.link("Cursos CCD (MCP)", "Responder CCD no disponible", 1)
+
     # --- Común: LLM → guardrails salida → memoria → respuesta
     http_json(wf, "Generar respuesta (LLM)", OPENAI_URL, llm_body("$json.messages", 700, 0.1), (2900, 300),
               timeout_ms=LLM_TIMEOUT_MS, cred=CRED_OPENAI, cred_type="openAiApi", onError="continueErrorOutput")
@@ -376,7 +391,8 @@ return [{ json: { response } }];
              f"[ {I}.session_id, {I}.message, $json.response ]", (3780, 300), onError="continueRegularOutput")
     respond(wf, "Responder OK", f"{{ response: $('Respuesta final').first().json.response, intent: {I}.intent }}",
             200, (4000, 300))
-    for p in ["Prompt consulta general", "Prompt calendario", "Prompt cursos", "Prompt noticias", "Prompt plan académico"]:
+    for p in ["Prompt consulta general", "Prompt calendario", "Prompt cursos", "Prompt noticias", "Prompt plan académico",
+              "Prompt competencias digitales"]:
         wf.link(p, "Generar respuesta (LLM)")
     wf.link("Generar respuesta (LLM)", "Extraer respuesta", 0)
     wf.link("Generar respuesta (LLM)", "Responder error LLM", 1)
@@ -589,6 +605,7 @@ AGENT_SYSTEM = (
     "- Matrícula, materias a inscribir, estado académico, promedio, proyección o fecha de grado, recomendaciones: "
     "llama get_academic_plan con student_id=\"{{ $('Validar sesión').first().json.student_id }}\".\n"
     "- Reglamento, plan de estudios, prerrequisitos, requisitos de grado: llama search_documents con la pregunta.\n"
+    "- Sus cursos de competencias digitales (CCD), prueba diagnóstica o insignia: get_ccd_progress con student_id.\n"
     "- Fechas: get_academic_calendar. Noticias: get_news (category: educacion, tecnologia o ingenieria-sistemas).\n"
     "Luego responde en español, breve, en viñetas, con las cifras exactas de la herramienta. Aplica educación de "
     "precisión (consejos basados en los datos del estudiante) y fomenta el autoaprendizaje y la investigación. "
@@ -635,7 +652,7 @@ def build_agent() -> dict:
         "endpointUrl": f"{MCP}/mcp",
         "serverTransport": "httpStreamable",
         "include": "selected",
-        "includeTools": ["get_academic_plan", "search_documents", "get_academic_calendar", "get_news"],
+        "includeTools": ["get_academic_plan", "search_documents", "get_academic_calendar", "get_news", "get_ccd_progress"],
         "options": {"timeout": 60000},
     }, (1820, 560))
     http_json(wf, "Guardrails salida", f"{GUARDRAILS}/validate-output",
@@ -672,6 +689,49 @@ return [{ json: { response } }];
     return wf.dump()
 
 
+# ================================================================== 12. Ingesta de documentos (RAG)
+def build_ingest() -> dict:
+    """Ingesta → chunking (220 tokens, overlap 30) → embeddings (granite) → pgvector, desde n8n.
+    Se ejecuta a mano (botón "Execute workflow") o por POST /webhook/ingest con el encabezado x-ingest-token."""
+    wf = WF("UNAB Chatbot - Ingesta de documentos (RAG)", "unabIngestDocs01")
+    summary_js = """
+const r = $input.first().json;
+const ok = Array.isArray(r.errors) ? r.errors.length === 0 : false;
+return [{ json: {
+  ok,
+  documentos: r.total_documents, procesados: r.processed_documents,
+  chunks: r.total_chunks, embeddings: r.total_embeddings, errores: r.errors || [],
+  parametros: { chunk_tokens: 220, overlap_tokens: 30, modelo_embeddings: 'granite-embedding:278m', indice: 'HNSW coseno' },
+} }];
+"""
+    # a) Manual (desde la interfaz de n8n)
+    wf.add("Ejecutar a mano", "n8n-nodes-base.manualTrigger", 1, {}, (0, 100))
+    http_json(wf, "Ingerir documentos (MCP)", f"{MCP}/tools/ingest_documents", "{ file_paths: [] }", (240, 100),
+              timeout_ms=600000)
+    code(wf, "Resumen de ingesta", summary_js, (480, 100))
+    wf.link("Ejecutar a mano", "Ingerir documentos (MCP)")
+    wf.link("Ingerir documentos (MCP)", "Resumen de ingesta")
+    # b) Webhook protegido con token
+    webhook(wf, "Webhook ingest", "POST", "ingest", (0, 400))
+    if_node(wf, "¿Token válido?",
+            "($json.headers['x-ingest-token'] || '') !== '' && $json.headers['x-ingest-token'] === $env.INGEST_TOKEN",
+            "boolean", "true", (240, 400))
+    http_json(wf, "Ingerir documentos (webhook)", f"{MCP}/tools/ingest_documents",
+              "{ file_paths: ($('Webhook ingest').first().json.body || {}).file_paths || [] }", (480, 300),
+              timeout_ms=600000, onError="continueErrorOutput")
+    code(wf, "Resumen (webhook)", summary_js, (720, 300))
+    respond(wf, "Responder resumen", "$json", 200, (960, 300))
+    respond(wf, "Responder 401 (token)", "{ error: 'Token inválido. Envía el encabezado x-ingest-token.' }", 401, (480, 520))
+    respond(wf, "Responder 503 (ingesta)", ERR_UNAVAILABLE, 503, (720, 520))
+    wf.link("Webhook ingest", "¿Token válido?")
+    wf.link("¿Token válido?", "Ingerir documentos (webhook)", 0)
+    wf.link("¿Token válido?", "Responder 401 (token)", 1)
+    wf.link("Ingerir documentos (webhook)", "Resumen (webhook)", 0)
+    wf.link("Ingerir documentos (webhook)", "Responder 503 (ingesta)", 1)
+    wf.link("Resumen (webhook)", "Responder resumen")
+    return wf.dump()
+
+
 BUILDERS = {
     "01_chat_ruteo.json": build_chat,
     "02_login.json": build_login,
@@ -684,6 +744,7 @@ BUILDERS = {
     "09_noticias.json": build_news,
     "10_scraper_noticias.json": build_scraper,
     "11_agente_ia_mcp.json": build_agent,
+    "12_ingesta_documentos.json": build_ingest,
 }
 
 

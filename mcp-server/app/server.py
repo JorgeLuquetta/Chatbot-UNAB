@@ -118,6 +118,17 @@ async def get_news(category: str = "", limit: int = 5, today_only: bool = False)
     return await academic.news(category, limit, today_only)
 
 
+@mcp.tool
+async def get_ccd_progress(student_id: str = "", session_id: str = "") -> str:
+    """Cursos de competencias digitales (Centro de Competencias Digitales, CCD) del estudiante: prueba
+    diagnóstica, cursos aprobados/en curso/pendientes y avance hacia la insignia de competencias digitales
+    (requisito de grado). student_id tipo U00000010."""
+    ccd = await academic.ccd_progress(student_id, session_id)
+    if ccd is None:
+        raise ValueError("No existe un estudiante con ese ID")
+    return academic.ccd_summary(ccd)
+
+
 # ------------------------------------------------------------------ puente REST
 async def _body(request: Request) -> dict[str, Any]:
     try:
@@ -243,3 +254,18 @@ async def rest_confirm_email(request: Request) -> JSONResponse:
         log.exception("confirm_email falló")
         return JSONResponse({"handled": False})   # si falla, el chat sigue normal
     return JSONResponse(result)
+
+
+@mcp.custom_route("/tools/get_ccd_progress", methods=["POST"])
+async def rest_ccd(request: Request) -> JSONResponse:
+    body = await _body(request)
+    try:
+        ccd = await academic.ccd_progress(str(body.get("student_id", "")), str(body.get("session_id", "")))
+    except ValueError as exc:
+        return _error(400, str(exc))
+    except Exception:
+        log.exception("get_ccd_progress falló")
+        return _error(503, "La base de datos de estudiantes no está disponible")
+    if ccd is None:
+        return _error(404, "No existe un estudiante con ese ID")
+    return JSONResponse({**ccd, "summary": academic.ccd_summary(ccd)})

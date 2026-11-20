@@ -2,7 +2,8 @@
 // build_workflows.py inserta este archivo (hasta la marca de export) en cada nodo Code,
 // y tests/test_n8n_code.py las prueba con Node.js.
 
-const INTENT_LABELS = ['consulta-general', 'calendario', 'cursos-realizados', 'noticias', 'plan-academico', 'correo'];
+const INTENT_LABELS = ['consulta-general', 'calendario', 'cursos-realizados', 'noticias', 'plan-academico', 'correo',
+  'competencias-digitales'];
 
 const FALLBACK_RESPONSE = 'Solo puedo ayudarte con temas académicos de la UNAB.';
 
@@ -24,6 +25,7 @@ const CLASSIFIER_PROMPT =
   '- plan-academico: matrícula (qué materias inscribir), estado académico (promedio, situación), proyección de grado ' +
   'y recomendaciones personalizadas para tener éxito.\n' +
   '- correo: pide que le ENVÍEN por correo noticias, su informe de avance o su informe de materias.\n' +
+  '- competencias-digitales: SUS cursos del Centro de Competencias Digitales (CCD), su prueba diagnóstica o su avance hacia la insignia.\n' +
   'Responde solo con la etiqueta, sin explicación.';
 
 function stripAccents(s) {
@@ -51,6 +53,11 @@ const RULES = [
     /\bme\s+faltan?\s+(cursos|materias|asignaturas|creditos|semestres)\b/,
   ]],
   ['noticias', [/\b(noticias?|novedades|convocatorias?)\b/]],
+  // Cursos del CCD del propio estudiante ("¿qué cursos de competencias digitales he tomado?").
+  // Las preguntas generales ("¿qué es la insignia?") van a consulta-general (RAG).
+  ['competencias-digitales', [
+    /^(?=.*\b(competencias digitales|ccd|insignia|prueba diagnostica)\b)(?=.*\b(he|mis|mi|me|llevo|tengo|faltan?|tomado|aprobado|voy|cuantos)\b)/,
+  ]],
   ['correo', [
     /\b(envia\w*|manda\w*|reenvia\w*|remite\w*)\b.*\b(correo|e-?mail|mail|gmail|yopmail|bandeja)\b/,
     /\b(al|a mi|por|por el)\s+(correo|e-?mail|mail)\b/,
@@ -64,7 +71,7 @@ const RULES = [
     /\b(recomendaciones?|recomiendas?|recomiendame|consejos?|como\s+(mejorar|tener\s+exito|me\s+va))\b/,
   ]],
   ['consulta-general', [
-    /\b(reglamento|requisitos?|grado|graduarme|titulo|supletorios?|habilitaci\w*|reprob\w*|repruebo|sancion\w*|homologa\w*|transferencia|reintegro|insignia|competencias?)\b/,
+    /\b(reglamento|requisitos?|grado|graduarme|titulo|supletorios?|habilitaci\w*|reprob\w*|repruebo|sancion\w*|homologa\w*|transferencia|reintegro|insignia|competencias?|ccd|prueba diagnostica)\b/,
   ]],
   ['calendario', [
     /\b(fecha|fechas|calendario|cronograma)\b/,
@@ -77,6 +84,8 @@ function ruleIntent(message) {
   const hits = RULES.filter(([, patterns]) => patterns.some((p) => p.test(text))).map(([label]) => label);
   // "Envíame las noticias al correo" también toca noticias: si pide un envío por correo, gana el correo
   if (hits.includes('correo')) return 'correo';
+  // Pregunta personal sobre el CCD: gana sobre cursos, plan y reglamento
+  if (hits.includes('competencias-digitales')) return 'competencias-digitales';
   // "¿qué materias debo matricular?" o "¿cuándo me gradúo?" también tocan cursos/reglamento: gana el plan
   if (hits.includes('plan-academico') && hits.every((h) => ['plan-academico', 'cursos-realizados', 'consulta-general'].includes(h))) {
     return 'plan-academico';
@@ -205,6 +214,7 @@ function planContext(plan) {
   const blocked = (en.blocked || []).slice(0, 3).map((b) =>
     `- ${b.course_name}: falta ${(b.missing_prerequisites || []).map((m) => m.course_name).join(', ')}`);
   const recs = (p.recommendations || []).map((r) => `- ${r.text}`);
+  const alerts = (p.alerts || []).map((a) => `- [${a.level}] ${a.text}`);
   return PEDAGOGY + '\n\n' +
     `PLAN ACADÉMICO DE ${s.full_name || 'el estudiante'} (${s.program || ''}, semestre ${s.current_semester || '?'}):\n` +
     `ESTADO ACADÉMICO: promedio ponderado ${st.gpa ?? 'sin notas'}; situación ${STANDING_LABEL[st.standing] || st.standing}; ` +
@@ -216,6 +226,7 @@ function planContext(plan) {
     `PROYECCIÓN: faltan ${pr.remaining_credits ?? '?'} créditos; ${pr.terms_remaining ?? '?'} periodos más; ` +
     `grado estimado en ${pr.estimated_graduation_term || '?'}; ${pr.on_track ? 'va al día' : 'tiene atrasos'}.\n` +
     'RECOMENDACIONES:\n' + (recs.join('\n') || '-') + '\n' +
+    (alerts.length ? 'ALERTAS DE REQUISITOS PENDIENTES:\n' + alerts.join('\n') + '\n' : '') +
     'Responde SOLO lo que pregunta (matrícula, estado, proyección o recomendaciones) con estas cifras exactas.\n' +
     'Si pregunta qué matricular, enumera TODAS las materias de la MATRÍCULA SUGERIDA (primero las que debe repetir).';
 }
@@ -242,6 +253,13 @@ function ensureEnrollment(response, plan, message) {
     (c.repeat ? ', repetir' : '') +
     (c.conditional ? ', si apruebas ' + (c.conditional_on || []).map((x) => x.course_name).join(' y ') : '') + ')');
   return `${out}\n\nMatrícula sugerida ${en.term} (${en.credits} de ${en.max_credits} créditos):\n${list.join('\n')}`;
+}
+
+// Avance en el Centro de Competencias Digitales (respuesta de /tools/get_ccd_progress)
+function ccdContext(ccd) {
+  return 'Eres un consejero académico. Usa SOLO estos datos del estudiante y responde lo que pregunta.' + '\n\n' +
+    String((ccd || {}).summary || '(sin datos del CCD)') + '\n' +
+    'Si faltan cursos para la insignia, recomienda el siguiente y menciona los cursos intensivos y cómo inscribirse.';
 }
 
 function parseEventDate(value) {
@@ -275,7 +293,7 @@ function llmText(resp) {
 if (typeof module !== 'undefined') {
   module.exports = {
     INTENT_LABELS, FALLBACK_RESPONSE, CLASSIFIER_PROMPT, normalizeIntent, ruleIntent, bearerToken, historyMessages, clip,
-    buildMessages, ragContext, calendarEvents, calendarContext, coursesContext, newsContext, planContext, PEDAGOGY, newsCategory, ensureEnrollment,
+    buildMessages, ragContext, calendarEvents, calendarContext, coursesContext, newsContext, planContext, PEDAGOGY, newsCategory, ensureEnrollment, ccdContext,
     eventsInWindow, parseEventDate, llmText, normalizeEvent,
   };
 }

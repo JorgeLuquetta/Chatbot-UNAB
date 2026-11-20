@@ -21,3 +21,6 @@ android/.idea/
 
 # Credenciales locales (no subir: el repo es público)
 CREDENCIALES.md
+
+# Video de demostración (se sube a YouTube, no al repo)
+docs/video/

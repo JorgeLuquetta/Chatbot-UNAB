@@ -57,5 +57,5 @@ def test_mcp_tools_listed():
 
     tools, result = asyncio.run(go())
     assert tools == {"search_documents", "get_student_courses", "ingest_documents", "run_news_scraper",
-                     "get_academic_plan", "get_academic_calendar", "get_news"}
+                     "get_academic_plan", "get_academic_calendar", "get_news", "get_ccd_progress"}
     assert result.data is not None

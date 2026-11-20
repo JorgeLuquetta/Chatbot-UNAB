@@ -40,7 +40,58 @@ async def academic_plan(student_id: str | None = None, session_id: str | None = 
         return None
     pool = await get_pool()
     raw = await pool.fetchval("SELECT academic_plan($1)::text", sess)
+    if not raw:
+        return None
+    plan = json.loads(raw)
+    # Alertas de requisitos pendientes y avance en el CCD (db/ccd.sql); si no existen, el plan sigue igual
+    try:
+        plan["alerts"] = json.loads(await pool.fetchval("SELECT student_alerts($1)::text", sess) or "[]")
+        plan["ccd"] = json.loads(await pool.fetchval("SELECT ccd_progress($1)::text", sess) or "null")
+    except Exception:
+        plan.setdefault("alerts", [])
+    return plan
+
+
+async def ccd_progress(student_id: str | None = None, session_id: str | None = None) -> dict[str, Any] | None:
+    """Cursos del Centro de Competencias Digitales, prueba diagnóstica y avance hacia la insignia."""
+    sess = await resolve_session(student_id, session_id)
+    if not sess:
+        return None
+    pool = await get_pool()
+    raw = await pool.fetchval("SELECT ccd_progress($1)::text", sess)
     return json.loads(raw) if raw else None
+
+
+CCD_STATUS = {"completed": "aprobado", "homologated": "homologado por la prueba diagnóstica",
+              "in_progress": "en curso", "failed": "reprobado (repetir)", "pending": "pendiente"}
+
+
+def ccd_summary(ccd: dict[str, Any]) -> str:
+    """Texto del avance CCD para el LLM (chat y agente)."""
+    b, d = ccd.get("badge", {}), ccd.get("diagnostic") or {}
+    lines = [
+        f"CENTRO DE COMPETENCIAS DIGITALES (CCD) — estudiante {ccd.get('student_id')}:",
+        f"Prueba diagnóstica: {d.get('score', 'no presentada')} puntos, nivel {d.get('level', '-')}.",
+        f"Insignia de competencias digitales: {'OBTENIDA' if b.get('earned') else 'pendiente'}; "
+        f"{b.get('required_done')} de {b.get('required_total')} cursos obligatorios y {b.get('electives_done')} electivo(s) aprobados.",
+    ]
+    # Agrupados por estado: un LLM pequeño no confunde "tomados" con "pendientes"
+    groups = [("YA TOMADOS (aprobados u homologados)", ("completed", "homologated")), ("EN CURSO", ("in_progress",)),
+              ("REPROBADOS (debe repetirlos)", ("failed",)), ("PENDIENTES (NO los ha tomado)", ("pending",))]
+    for label, statuses in groups:
+        items = [c for c in ccd.get("courses", []) if c["status"] in statuses]
+        if not items:
+            continue
+        lines.append(f"{label}:")
+        for c in items:
+            extra = " — homologado por la prueba diagnóstica" if c["status"] == "homologated" else (
+                f" — nota {c['grade']}" if c.get("grade") is not None else "")
+            lines.append(f"- {c['course_code']} {c['course_name']} ({'obligatorio' if c['required'] else 'electivo'}){extra}")
+    if b.get("next"):
+        lines.append(f"Siguiente curso recomendado: {b['next']}.")
+    if ccd.get("enrollment_info"):
+        lines.append(f"Inscripción: {ccd['enrollment_info']}")
+    return "\n".join(lines)
 
 
 async def academic_calendar(upcoming_only: bool = False, limit: int = 30) -> list[dict[str, Any]]:
@@ -96,4 +147,7 @@ def plan_summary(plan: dict[str, Any]) -> str:
                  f"{'va al día' if pr.get('on_track') else 'tiene atrasos'}.")
     lines.append("RECOMENDACIONES:")
     lines += [f"- {r['text']}" for r in plan.get("recommendations", [])]
+    if plan.get("alerts"):
+        lines.append("ALERTAS DE REQUISITOS PENDIENTES:")
+        lines += [f"- [{a['level']}] {a['text']}" for a in plan["alerts"]]
     return "\n".join(lines)

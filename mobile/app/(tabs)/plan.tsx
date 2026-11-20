@@ -17,6 +17,10 @@ const STANDING: Record<string, { label: string; color: (t: Theme) => string }> =
   'sin notas': { label: 'Sin notas todavía', color: (t) => t.muted },
 };
 
+const CCD_STATUS: Record<string, string> = {
+  completed: 'Aprobado', homologated: 'Homologado', in_progress: 'En curso', failed: 'Reprobado', pending: 'Pendiente',
+};
+
 const REC_ICON: Record<string, string> = {
   matricula: '🧾', riesgo: '⚠️', precision: '🎯', investigacion: '🔬', autoaprendizaje: '💡', grado: '🎓',
 };
@@ -99,7 +103,20 @@ export default function PlanScreen() {
           </Text>
         </Card>
 
-        {/* Matrícula sugerida */}
+        {/* Alertas de requisitos pendientes */}
+      {(data.alerts?.length ?? 0) > 0 && (
+        <Card title="Alertas de requisitos" icon="⚠️" tint={t.peach}>
+          {data.alerts!.map((a, i) => (
+            <View key={i} style={styles.rec}>
+              <Ionicons name={a.level === 'alta' ? 'alert-circle' : 'information-circle-outline'} size={18}
+                color={a.level === 'alta' ? t.bad : t.warn} />
+              <Text style={{ color: t.text, flex: 1, lineHeight: 20, fontWeight: a.level === 'alta' ? '700' : '400' }}>{a.text}</Text>
+            </View>
+          ))}
+        </Card>
+      )}
+
+      {/* Matrícula sugerida */}
         <Card title={`Matrícula sugerida ${en.term}`} icon="🧾" tint={t.lavender}>
           <Text style={{ color: t.muted, fontSize: 13, fontWeight: '600' }}>
             {en.credits} de {en.max_credits} créditos permitidos
@@ -133,7 +150,43 @@ export default function PlanScreen() {
           )}
         </Card>
 
-        {/* Recomendaciones */}
+        {/* Competencias digitales (CCD) e insignia */}
+      {data.ccd && (
+        <Card title="Competencias digitales (CCD)" icon="🏅" tint={t.mint}>
+          <Text style={{ color: data.ccd.badge.earned ? t.ok : t.warn, fontWeight: '800' }}>
+            Insignia {data.ccd.badge.earned ? 'obtenida' : 'pendiente'} · {data.ccd.badge.required_done} de {data.ccd.badge.required_total} obligatorios · {data.ccd.badge.electives_done} electivo(s)
+          </Text>
+          {data.ccd.diagnostic && (
+            <Text style={{ color: t.muted, fontSize: 13, fontWeight: '600' }}>
+              Prueba diagnóstica: {data.ccd.diagnostic.score} puntos (nivel {data.ccd.diagnostic.level})
+            </Text>
+          )}
+          {data.ccd.courses.map((c) => {
+            const done = c.status === 'completed' || c.status === 'homologated';
+            return (
+              <View key={c.course_code} style={[styles.row, { borderTopColor: t.line }]}>
+                <View style={{ flex: 1 }}>
+                  <Text style={[styles.name, { color: t.text }]}>
+                    <Text style={{ fontWeight: '800' }}>{c.course_code}</Text> {c.course_name}
+                  </Text>
+                  <Text style={{ color: t.muted, fontSize: 12, fontWeight: '700' }}>
+                    {c.required ? 'obligatorio' : 'electivo'} · {CCD_STATUS[c.status] ?? c.status}
+                    {c.grade != null ? ` · ${Number(c.grade).toFixed(1)}` : ''}
+                  </Text>
+                </View>
+                <View style={[styles.rowIcon, { backgroundColor: done ? t.mint : c.status === 'in_progress' ? t.lemon : t.line }]}>
+                  <Ionicons name={done ? 'checkmark' : c.status === 'in_progress' ? 'time-outline' : 'ellipse-outline'} size={16} color={t.onPastel} />
+                </View>
+              </View>
+            );
+          })}
+          {data.ccd.badge.next && (
+            <Text style={{ color: t.text, marginTop: 6, fontWeight: '700' }}>Siguiente: {data.ccd.badge.next}</Text>
+          )}
+        </Card>
+      )}
+
+      {/* Recomendaciones */}
         <Card title="Recomendaciones" icon="💡" tint={t.lemon}>
           {recommendations.map((r, i) => (
             <View key={i} style={styles.rec}>

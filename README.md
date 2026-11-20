@@ -31,7 +31,7 @@ herramientas. Todo corre en una VM de Azure con Docker Compose, publicada con un
 |---|---|---|
 | 06 · Objetivo | Matrícula, avance, proyección de semestres, alertas de requisitos, recomendaciones | `academic_plan()` + `student_alerts()` (inglés B1, Saber Pro, opción de grado, insignia CCD, reprobadas, prerrequisitos) |
 | 08 · Infraestructura | **AWS EC2** con puerto 9000 | **Azure VM** (aprobado por el profesor en lugar de AWS), Ubuntu 24.04, NSG con el **puerto 9000 abierto** para n8n (`http://135.232.242.188:9000/webhook/...`) |
-| 08 · Infraestructura | n8n en contenedores | Docker Compose con 9 servicios |
+| 08 · Infraestructura | n8n en contenedores | Docker Compose con 8 servicios |
 | 08 · Infraestructura | PostgreSQL + pgvector (Supabase) con **vistas analíticas** | PostgreSQL 16 + pgvector; vistas `v_estado_estudiante`, `v_ccd_progreso`, `v_avance_programa`, `v_noticias_recientes` ([BD](#base-de-datos-postgresql)) |
 | 08 · Infraestructura | Servidor MCP (FastMCP) con herramientas relacionales | `mcp-server/`, 8 herramientas sobre PostgreSQL |
 | 09 · Alcance | Ruta y cursos; *¿qué es la insignia de competencias digitales?* | Plan académico + RAG con `data/ccd/centro_competencias_digitales.md` |
@@ -50,7 +50,8 @@ móvil 20 % · Documentación 10 %. Cada criterio está cubierto en las seccione
 
 ## Video de demostración
 
-> 🎬 **Enlace de YouTube: _pendiente_.** El video recorre el portal, la app en Expo Go, el plan académico, el RAG
+> 🎬 **[Ver video de demostración en YouTube](https://www.youtube.com/watch?v=A1gF0J1GTPI&feature=youtu.be).**
+> El video recorre el portal, la app en Expo Go, el plan académico, el RAG
 > (reglamento e insignia del CCD), los cursos de competencias digitales, las noticias, el envío por correo, los
 > guardrails, los workflows de n8n y la base de datos.
 
@@ -233,15 +234,16 @@ reglamento, que contiene los artículos 8 (supletorio) y 9 (habilitación).
 
 ## Base de datos (PostgreSQL)
 
-Scripts (en este orden; el `docker-compose.override.yml` los ejecuta solos en una base nueva):
+La base de datos de ejecución es **Supabase PostgreSQL en la nube**. Antes de iniciar los contenedores, ejecuta
+estos scripts en orden desde **Supabase → SQL Editor**:
 
 | Script | Qué crea |
 |---|---|
 | `db/schema.sql` | `students`, `student_sessions`, `student_courses`, `document_chunks` (pgvector), `conversation_memory` (+ trigger de 50 intercambios), `noticias`, `guardrails_audit_log`, `device_tokens`, `notifications_sent` y funciones (`login_student`, `validate_session`, `session_by_student`, `get_recent_history`, `save_exchange`, `pending_notifications`) |
 | `db/seed.sql` | 2 estudiantes de demostración con historial |
 | `db/seed_sintetico.sql` | `program_courses` (76 materias con créditos en 4 programas) y 40 estudiantes con historial |
-| `db/ccd.sql` | Centro de Competencias Digitales: `ccd_courses` (7 cursos), `student_ccd_courses`, `ccd_diagnostics`; requisitos de grado por estudiante (`english_level`, `saber_pro_done`, `grade_option`); funciones `ccd_progress()` y `student_alerts()`; **vistas analíticas** `v_estado_estudiante`, `v_ccd_progreso`, `v_avance_programa`, `v_noticias_recientes`; fechas del CCD en el calendario |
 | `db/academico.sql` | `course_prerequisites`, `academic_calendar`, `email_requests`, columnas `category`, `source_name` e `image_url` en `noticias`, `email` en `students` (correos `@yopmail.com` de prueba), funciones `academic_term()` y `academic_plan()` |
+| `db/ccd.sql` | Centro de Competencias Digitales: `ccd_courses` (7 cursos), `student_ccd_courses`, `ccd_diagnostics`; requisitos de grado por estudiante (`english_level`, `saber_pro_done`, `grade_option`); funciones `ccd_progress()` y `student_alerts()`; **vistas analíticas** `v_estado_estudiante`, `v_ccd_progreso`, `v_avance_programa`, `v_noticias_recientes`; fechas del CCD en el calendario |
 
 ```mermaid
 erDiagram
@@ -306,15 +308,7 @@ situación: excelencia / normal / en observación / prueba académica), **matrí
 situación), **materias bloqueadas**, **proyección** (créditos y periodos restantes, periodo estimado de grado) y
 **recomendaciones** calculadas con los datos del estudiante.
 
-Ver las tablas con datos en la VM:
-
-```bash
-docker compose exec db psql -U postgres -d chatbot -c "\dt+"
-docker compose exec db psql -U postgres -d chatbot -c "SELECT jsonb_pretty(academic_plan('sess_u00000010'))"
-docker compose exec db psql -U postgres -d chatbot -c "SELECT * FROM v_estado_estudiante LIMIT 5"
-docker compose exec db psql -U postgres -d chatbot -c "SELECT * FROM v_avance_programa"
-docker compose exec db psql -U postgres -d chatbot -c "SELECT jsonb_pretty(student_alerts('sess_u00000010'))"
-```
+Para consultar las tablas y ejecutar consultas SQL, usa **Supabase → SQL Editor** en el proyecto configurado.
 
 ## Servidor MCP
 
@@ -426,10 +420,10 @@ Cálculo Integral*, *¿qué necesito para hacer mi proyecto de grado?*, *clima o
 | Qué | Cómo |
 |---|---|
 | Contenedores | `restart: always`; Docker arranca con el sistema |
-| Datos | Volúmenes `pg_data` (PostgreSQL), `n8n_data`, `ollama_models` (modelos), `mailpit_data`, `expo_node_modules` |
+| Datos | Supabase aloja PostgreSQL y pgvector; los volúmenes locales solo guardan n8n, modelos, Mailpit y dependencias de Expo |
 | Modelos de IA | El servicio `ollama-pull` descarga y crea `unab-llm` (qwen2.5:1.5b) y `unab-agent` (qwen2.5:3b) si faltan |
-| Vigilante | `unab-watchdog.timer` cada 2 min (`scripts/watchdog.sh`): levanta contenedores caídos, reinicia los que no responden (n8n, web, MCP, guardrails, BD, Ollama, Expo) y el túnel `cloudflared` |
-| Respaldo | `unab-backup.timer` diario a las 03:00 (`scripts/respaldo_db.sh`): `pg_dump` comprimido en `~/respaldos-chatbot`, 7 días |
+| Vigilante | `unab-watchdog.timer` cada 2 min (`scripts/watchdog.sh`): levanta contenedores caídos y reinicia los que no responden (n8n, web, MCP, guardrails, Ollama, Expo) y el túnel `cloudflared` |
+| Respaldo | `unab-backup.timer` diario a las 03:00 (`scripts/respaldo_db.sh`): `pg_dump` de Supabase comprimido en `~/respaldos-chatbot`, 7 días |
 | Túnel | `cloudflared.service` habilitado al arranque |
 
 Instalación (una vez, en la VM): `./scripts/instalar_persistencia.sh`.
@@ -511,7 +505,7 @@ estudiantes, chat con ruteo y notificaciones.
 
 | Carpeta | Contenido |
 |---|---|
-| `docker-compose.yml`, `docker-compose.override.yml`, `.env.example` | Infraestructura: n8n, mcp-server, guardrails, ollama, db (PostgreSQL + pgvector), web (nginx), expo, mailpit |
+| `docker-compose.yml`, `.env.example` | Infraestructura: n8n, mcp-server, guardrails, ollama, web (nginx), expo y mailpit; PostgreSQL + pgvector en Supabase |
 | `db/` | Esquema, datos sintéticos y módulo académico (`academico.sql`) |
 | `data/ccd/` | Documentos del RAG (reglamento, plan de estudios, requisitos de grado, guía de éxito académico) |
 | `mcp-server/` | Servidor FastMCP: RAG, plan académico, calendario, noticias, ingesta, scraper (`scraper.py`) y correo (`mailer.py`) |
@@ -545,8 +539,8 @@ SUBSCRIPTION=<id-de-tu-suscripcion> ./scripts/azure/crear_vm.sh
 sudo apt update && sudo apt install -y docker.io docker-compose-v2 python3 git
 sudo usermod -aG docker $USER && newgrp docker
 git clone <tu-repo> ~/Chatbot-UNAB && cd ~/Chatbot-UNAB
-cp .env.example .env && nano .env        # dominios, claves, POSTGRES_PASSWORD (ver tabla)
-docker compose up -d --build             # PostgreSQL con todos los scripts SQL, Ollama y sus modelos (~5 GB)
+cp .env.example .env && nano .env        # dominios, credenciales de Supabase y demás servicios
+docker compose up -d --build             # servicios de la app y modelos de Ollama (~5 GB)
 python3 scripts/setup_n8n.py --activate  # credenciales cifradas, importa y activa los 11 workflows
 docker compose exec mcp-server python -m app.cli ingest   # RAG: documentos de data/ccd/
 docker compose exec mcp-server python -m app.cli scrape   # primera carga de noticias de la UNAB
@@ -561,7 +555,7 @@ Variables clave del `.env`:
 | `N8N_SECURE_COOKIE` | `true` | Cookie de sesión segura (n8n detrás de HTTPS) |
 | `N8N_BIND`, `WEB_BIND` | `127.0.0.1` | Solo accesibles por el túnel. `0.0.0.0` para usar la IP pública sin túnel |
 | `EXPO_PUBLIC_URL`, `EXPO_API_URL` | `https://expoapp.traumado.top`, `https://n8n.traumado.top/webhook` | URLs que ve la app en Expo Go |
-| `SUPABASE_DB_URL`, `DB_SSL` | `postgresql://postgres:<clave>@db:5432/chatbot`, `disable` | PostgreSQL local del override |
+| `SUPABASE_DB_URL`, `DB_SSL` | cadena de conexión del Session Pooler de Supabase (puerto 5432), `require` | Conexión segura a PostgreSQL en la nube |
 | `AGENT_LLM_MODEL`, `OLLAMA_MAX_LOADED_MODELS`, `OLLAMA_CONTEXT_LENGTH` | `unab-agent`, `3`, `8192` | Modelo del agente (`qwen2.5:3b`) y su contexto |
 | `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASSWORD`, `SMTP_FROM` | vacío (Mailpit) o Brevo | [Envío por correo](#envío-por-correo) |
 | `NEWS_ALLOWED_DOMAINS` | `unab.edu.co` | Dominios de los que el scraper guarda noticias |
@@ -587,10 +581,8 @@ abre https://qrapp.traumado.top en el PC y escanea el QR. Para desarrollo local:
 `cd mobile && npm install && npx expo start`. Detalles en `mobile/README.md` y en el
 [manual de usuario](docs/manual_usuario.md).
 
-### Opcional: Supabase, Google Sheets y Firebase
+### Google Sheets y Firebase
 
-- **Supabase** en lugar del PostgreSQL local: ejecuta los 4 scripts de `db/` en el SQL Editor, pon la cadena de
-  conexión en `SUPABASE_DB_URL` con `DB_SSL=require` y borra `docker-compose.override.yml`.
 - **Firebase Cloud Messaging** (push en la app Kotlin): `google-services.json` en `android/app/`, `FCM_PROJECT_ID` y
   `GOOGLE_SA_JSON` con el rol *Firebase Cloud Messaging API Admin*.
 

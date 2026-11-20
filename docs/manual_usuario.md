@@ -98,7 +98,7 @@ matrícula sugerida, proyección y recomendaciones) y tu **informe de materias**
 | n8n (workflows y ejecuciones) | https://n8n.traumado.top — usuario y clave en `~/Chatbot-UNAB/CREDENCIALES.md` de la VM |
 | Bandeja de correo de prueba | https://portal.traumado.top/correo/ |
 | SSH a la VM | `ssh azureuser@135.232.242.188` (solo con contraseña, sin llaves; el puerto 22 solo acepta la IP del administrador) |
-| PostgreSQL | dentro de la VM: `docker compose exec db psql -U postgres -d chatbot` |
+| PostgreSQL y pgvector | Proyecto de Supabase → SQL Editor |
 
 Si cambia tu IP, actualiza la regla de SSH:
 
@@ -122,7 +122,7 @@ python3 scripts/setup_n8n.py --activate                    # reimportar workflow
 - **Cambiar el calendario:** `INSERT INTO academic_calendar (event_name, event_date, description) VALUES (...)`.
 - **Agregar fuentes de noticias:** edita `mcp-server/sources.json` (`type: html` con selectores CSS, o `type: rss`). Solo se guardan las de los dominios de `NEWS_ALLOWED_DOMAINS` (por defecto `unab.edu.co`).
 - **Activar el envío real por correo (Brevo):** agrega al `.env` `SMTP_HOST=smtp-relay.brevo.com`, `SMTP_PORT=587`, `SMTP_USER=<login SMTP>`, `SMTP_PASSWORD=<clave SMTP>` y `SMTP_FROM=Asistente UNAB <tu-remitente-verificado>`, y ejecuta `docker compose up -d mcp-server`.
-- **Respaldos:** `~/respaldos-chatbot/` (diario, 7 días). Restaurar: `gunzip -c ~/respaldos-chatbot/chatbot-AAAA-MM-DD.sql.gz | docker compose exec -T db psql -U postgres -d chatbot`.
+- **Respaldos de Supabase:** `~/respaldos-chatbot/` (diario, 7 días). Para restaurar, conecta `psql` al proyecto Supabase usando su cadena de conexión y carga el archivo descomprimido; no restaures en un PostgreSQL local.
 - **Ver ejecuciones en n8n:** menú **Executions**. Cada ejecución muestra el recorrido por los nodos y los datos.
 
 ### 2.3 Encender, apagar y costos

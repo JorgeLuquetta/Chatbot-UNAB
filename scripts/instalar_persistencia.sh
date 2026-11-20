@@ -3,9 +3,9 @@
 #   ./scripts/instalar_persistencia.sh
 #
 # * Docker y cloudflared arrancan con el sistema.
-# * Los contenedores tienen restart: always y sus datos en volúmenes (n8n_data, pg_data, ollama_models, ...).
+# * Los contenedores tienen restart: always y sus datos en volúmenes (n8n_data, ollama_models, ...).
 # * unab-watchdog.timer: cada 2 min revisa y levanta lo que no responda (scripts/watchdog.sh).
-# * unab-backup.timer: respaldo diario de PostgreSQL a las 03:00 (scripts/respaldo_db.sh), 7 días.
+# * unab-backup.timer: respaldo diario de Supabase PostgreSQL a las 03:00 (scripts/respaldo_db.sh), 7 días.
 set -eu
 DIR="$(cd "$(dirname "$0")/.." && pwd)"
 USER_NAME="$(id -un)"
@@ -37,7 +37,7 @@ EOF
 
 sudo tee /etc/systemd/system/unab-backup.service >/dev/null <<EOF
 [Unit]
-Description=Respaldo diario de PostgreSQL del Chatbot UNAB
+Description=Respaldo diario de Supabase PostgreSQL del Chatbot UNAB
 After=docker.service
 Requires=docker.service
 
@@ -50,7 +50,7 @@ EOF
 
 sudo tee /etc/systemd/system/unab-backup.timer >/dev/null <<EOF
 [Unit]
-Description=Respaldo diario de PostgreSQL (03:00)
+Description=Respaldo diario de Supabase PostgreSQL (03:00)
 
 [Timer]
 OnCalendar=*-*-* 03:00:00

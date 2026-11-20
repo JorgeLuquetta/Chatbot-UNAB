@@ -883,7 +883,7 @@ El sistema combina pruebas de ejemplo (unitarias e integración) con pruebas bas
 Para ejecutar las PBT sin incurrir en costos de API reales:
 - **LLM**: mock que retorna respuestas predefinidas según el prompt.
 - **Google Sheets**: mock HTTP que retorna JSON de calendario.
-- **Supabase**: base de datos PostgreSQL local en Docker para tests.
+- **Supabase**: PostgreSQL + pgvector en la nube para la aplicación; PostgreSQL local se usa únicamente en pruebas de integración.
 - **FCM**: mock HTTP que registra las notificaciones enviadas.
 
 ### Convención de etiquetado de propiedades

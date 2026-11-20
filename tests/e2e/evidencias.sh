@@ -4,7 +4,7 @@
 #
 #   BASE=http://<ip-vm>:9000/webhook ./tests/e2e/evidencias.sh          # desde cualquier equipo
 #   ./tests/e2e/evidencias.sh --mcp                                       # en la VM: también MCP y RAG
-set -u
+set -euo pipefail
 BASE="${BASE:-http://localhost:9000/webhook}"
 SID="${SID:-U00000010}"
 OUT="$(cd "$(dirname "$0")/../.." && pwd)/docs/evidencias"
@@ -98,14 +98,42 @@ PY
     echo
     echo "### RAG: chunks en pgvector"
     echo '```'
-    docker compose exec -T db psql -U postgres -d chatbot -c \
-      "SELECT document_name, count(*) AS chunks, round(avg(length(content))) AS caracteres_promedio FROM document_chunks GROUP BY 1 ORDER BY 1"
-    echo '```'
-    echo
-    echo "### Base de datos: tablas y filas"
-    echo '```'
-    docker compose exec -T db psql -U postgres -d chatbot -c \
-      "SELECT relname AS tabla, n_live_tup AS filas FROM pg_stat_user_tables ORDER BY relname"
+    docker compose exec -T mcp-server python - <<'PY'
+import asyncio
+import json
+import os
+
+import asyncpg
+
+
+async def main():
+    ssl = os.getenv("DB_SSL", "require")
+    connection = await asyncpg.connect(
+        dsn=os.environ["SUPABASE_DB_URL"],
+        ssl=None if ssl.lower() in ("", "disable", "false") else ssl,
+        statement_cache_size=0,
+    )
+    try:
+        results = {
+            "chunks": await connection.fetch(
+                "SELECT document_name, count(*) AS chunks, "
+                "round(avg(length(content))) AS caracteres_promedio "
+                "FROM document_chunks GROUP BY 1 ORDER BY 1"
+            ),
+            "tablas": await connection.fetch(
+                "SELECT relname AS tabla, n_live_tup AS filas "
+                "FROM pg_stat_user_tables ORDER BY relname"
+            ),
+        }
+        for name, rows in results.items():
+            print(f"{name}:")
+            print(json.dumps([dict(row) for row in rows], ensure_ascii=False, default=str, indent=2))
+    finally:
+        await connection.close()
+
+
+asyncio.run(main())
+PY
     echo '```'
   } >> "$MD"
 fi

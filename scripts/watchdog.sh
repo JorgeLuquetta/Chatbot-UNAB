@@ -22,7 +22,7 @@ docker compose up -d --no-recreate --no-deps $SERVICES >/dev/null 2>&1 || echo "
 # 2) Servicios que están arriba pero no responden
 check http://localhost:9000/healthz || restart_if_old n8n
 { check http://localhost:9001/ && check http://localhost:9002/ && check http://localhost:9003/; } || restart_if_old web
-for s in mcp-server guardrails db; do healthy "$s" || restart_if_old "$s"; done
+for s in mcp-server guardrails; do healthy "$s" || restart_if_old "$s"; done
 docker compose exec -T ollama ollama list >/dev/null 2>&1 || restart_if_old ollama
 # Expo: la primera vez instala dependencias (npm ci), por eso tiene 10 min de margen
 if docker compose config --services 2>/dev/null | grep -qx expo; then
